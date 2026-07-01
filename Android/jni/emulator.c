@@ -115,6 +115,16 @@ const uint32_t *sb_emu_front_buffer(sb_emulator *e, unsigned *w, unsigned *h)
     return fb;
 }
 
+void sb_emu_copy_front(sb_emulator *e, uint32_t *dst, unsigned *w, unsigned *h)
+{
+    pthread_mutex_lock(&e->fb_mtx);
+    unsigned fw = e->front_w, fh = e->front_h;
+    memcpy(dst, e->buffers[e->back ^ 1], (size_t)fw * fh * sizeof(uint32_t));
+    pthread_mutex_unlock(&e->fb_mtx);
+    if (w) *w = fw;
+    if (h) *h = fh;
+}
+
 sb_ring *sb_emu_audio_ring(sb_emulator *e) { return e->audio; }
 
 void sb_emu_set_key(sb_emulator *e, int idx, int pressed)
