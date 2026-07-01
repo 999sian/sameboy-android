@@ -29,7 +29,7 @@ struct sb_session {
 static void *emu_loop(void *arg)
 {
     sb_session *s = arg;
-    int applied_turbo = 0;
+    int applied_turbo = -1; /* -1: force first-iteration apply — core turbo state persists across stop/start */
     while (atomic_load(&s->running)) {
         pthread_mutex_lock(&s->pause_mtx);
         while (s->paused && atomic_load(&s->running)) {
@@ -201,7 +201,7 @@ void sb_session_start(sb_session *s, ANativeWindow *win)
     }
     s->win = win;
     atomic_store(&s->running, true);
-    s->paused = 0;
+    s->paused = 0; /* pre-thread: no lock needed, pthread_create provides the happens-before */
     s->audio = sb_audio_start(sb_emu_audio_ring(s->emu));
     if (!s->audio) {
         __android_log_print(ANDROID_LOG_WARN, "SameBoy",
