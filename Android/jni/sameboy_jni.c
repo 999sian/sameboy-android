@@ -112,6 +112,73 @@ Java_io_sameboy_android_NativeBridge_nativeSaveBattery(JNIEnv *env, jclass c, jl
     return arr;
 }
 
+JNIEXPORT jbyteArray JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSaveState(JNIEnv *env, jclass c, jlong ctx)
+{
+    (void)c;
+    uint8_t *buf = NULL;
+    size_t n = sb_session_save_state((sb_session *)(uintptr_t)ctx, &buf);
+    if (n == 0) return NULL;
+    jbyteArray arr = (*env)->NewByteArray(env, (jsize)n);
+    if (arr) (*env)->SetByteArrayRegion(env, arr, 0, (jsize)n, (const jbyte *)buf);
+    free(buf);
+    return arr;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_sameboy_android_NativeBridge_nativeLoadState(JNIEnv *env, jclass c, jlong ctx, jbyteArray data)
+{
+    (void)c;
+    if (!data) return JNI_FALSE;
+    jsize n = (*env)->GetArrayLength(env, data);
+    jbyte *bytes = (*env)->GetByteArrayElements(env, data, NULL);
+    if (!bytes) return JNI_FALSE;
+    int ret = sb_session_load_state((sb_session *)(uintptr_t)ctx, (const uint8_t *)bytes, (size_t)n);
+    (*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
+    return ret == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSetTurbo(JNIEnv *env, jclass c, jlong ctx, jboolean on)
+{ (void)env; (void)c; sb_session_set_turbo((sb_session *)(uintptr_t)ctx, on); }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSetRewinding(JNIEnv *env, jclass c, jlong ctx, jboolean on)
+{ (void)env; (void)c; sb_session_set_rewinding((sb_session *)(uintptr_t)ctx, on); }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSwitchModel(JNIEnv *env, jclass c, jlong ctx, jint model)
+{ (void)env; (void)c; sb_session_switch_model((sb_session *)(uintptr_t)ctx, model); }
+
+JNIEXPORT jboolean JNICALL
+Java_io_sameboy_android_NativeBridge_nativeIsBatteryDirty(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; return sb_session_battery_dirty((sb_session *)(uintptr_t)ctx) ? JNI_TRUE : JNI_FALSE; }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeClearBatteryDirty(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; sb_session_clear_battery_dirty((sb_session *)(uintptr_t)ctx); }
+
+JNIEXPORT jintArray JNICALL
+Java_io_sameboy_android_NativeBridge_nativeCopyFrame(JNIEnv *env, jclass c, jlong ctx)
+{
+    (void)c;
+    sb_session *s = (sb_session *)(uintptr_t)ctx;
+    if (!s) return NULL;
+    uint32_t *px = malloc(SB_FB_MAX * sizeof(uint32_t));
+    if (!px) return NULL;
+    unsigned w = 0, h = 0;
+    sb_session_copy_frame(s, px, &w, &h);
+    if (w == 0 || h == 0) { free(px); return NULL; }
+    jintArray arr = (*env)->NewIntArray(env, (jsize)(2 + w * h));
+    if (arr) {
+        jint header[2] = { (jint)w, (jint)h };
+        (*env)->SetIntArrayRegion(env, arr, 0, 2, header);
+        (*env)->SetIntArrayRegion(env, arr, 2, (jsize)(w * h), (const jint *)px);
+    }
+    free(px);
+    return arr;
+}
+
 JNIEXPORT void JNICALL
 Java_io_sameboy_android_NativeBridge_nativeDestroy(JNIEnv *env, jclass c, jlong ctx)
 { (void)env; (void)c; sb_session_destroy((sb_session *)(uintptr_t)ctx); }

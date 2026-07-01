@@ -14,6 +14,15 @@ public final class NativeBridge {
     public static native void nativeSetKey(long ctx, int gbKeyIndex, boolean pressed);
     public static native void nativeReset(long ctx);
     public static native byte[] nativeSaveBattery(long ctx);
+    public static native byte[]  nativeSaveState(long ctx);
+    public static native boolean nativeLoadState(long ctx, byte[] state);
+    public static native void    nativeSetTurbo(long ctx, boolean on);
+    public static native void    nativeSetRewinding(long ctx, boolean on);
+    public static native void    nativeSwitchModel(long ctx, int model);
+    public static native boolean nativeIsBatteryDirty(long ctx);
+    public static native void    nativeClearBatteryDirty(long ctx);
+    /** [0]=width, [1]=height, then width*height ABGR pixels. null on failure. */
+    public static native int[]   nativeCopyFrame(long ctx);
     public static native void nativeDestroy(long ctx);
 
     // GB_key_t indices (Core/joypad.h)
