@@ -1,0 +1,42 @@
+plugins { id "com.android.application" }
+
+// Read VERSION from repo-root version.mk (e.g. "1.0.1")
+def sameboyVersion = file("${rootDir}/../version.mk").readLines()
+        .find { it.startsWith("VERSION") }?.split(":=")?.last()?.trim() ?: "0.0.0"
+
+android {
+    namespace "io.sameboy.android"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "io.sameboy.android"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName sameboyVersion
+        ndk { abiFilters "arm64-v8a", "armeabi-v7a", "x86_64", "x86" }
+    }
+
+    // Native build is added in Task 3 (externalNativeBuild).
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        debug { debuggable true }
+        release { minifyEnabled false }
+    }
+}
+
+dependencies {
+    implementation "androidx.appcompat:appcompat:1.7.0"
+
+    // appcompat 1.7.0 pulls coroutines 1.6.4 -> kotlin-stdlib-jdk7/jdk8:1.6.21, whose
+    // classes were folded into kotlin-stdlib (1.8.22 here) at 1.8.0, causing duplicate
+    // classes. Align the stub artifacts to the resolved stdlib version.
+    constraints {
+        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22")
+        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22")
+    }
+}
