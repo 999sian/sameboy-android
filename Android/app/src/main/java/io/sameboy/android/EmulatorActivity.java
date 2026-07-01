@@ -43,8 +43,14 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
 
         FrameLayout root = new FrameLayout(this);
         EmulatorSurfaceView surface = new EmulatorSurfaceView(this, this);
-        TouchOverlayView overlay = new TouchOverlayView(this,
-                (k, pressed) -> { if (ctx != 0) NativeBridge.nativeSetKey(ctx, k, pressed); });
+        TouchOverlayView overlay = new TouchOverlayView(this, new TouchOverlayView.ControlListener() {
+            @Override public void onKey(int k, boolean pressed) {
+                if (ctx != 0) NativeBridge.nativeSetKey(ctx, k, pressed);
+            }
+            @Override public void onSpecial(int what, boolean pressed) {
+                // wired fully in the activity task
+            }
+        });
         root.addView(surface);
         root.addView(overlay);
         setContentView(root);

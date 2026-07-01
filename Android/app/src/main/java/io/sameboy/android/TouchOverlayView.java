@@ -11,17 +11,21 @@ import android.view.View;
 /** Minimal, functional on-screen controls. Art polish is a later milestone;
  *  M1 draws simple hit-regions and reports presses via the callback. */
 class TouchOverlayView extends View {
-    interface KeyListener { void onKey(int gbKeyIndex, boolean pressed); }
+    interface ControlListener {
+        void onKey(int gbKeyIndex, boolean pressed);      // 0..7, unchanged semantics
+        void onSpecial(int what, boolean pressed);        // SPECIAL_* below
+    }
+    static final int SPECIAL_REWIND = 8, SPECIAL_TURBO = 9, SPECIAL_MENU = 10;
 
-    private final KeyListener listener;
+    private final ControlListener listener;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     // regions computed in onSizeChanged
-    private RectF up, down, left, right, a, b, start, select;
+    private RectF up, down, left, right, a, b, start, select, rewind, turbo, menu;
     // per-pointer key assignment + per-key refcount (multiple fingers may hold one key)
     private final java.util.HashMap<Integer, Integer> pointerKey = new java.util.HashMap<>();
-    private final int[] keyCount = new int[8]; // GB_KEY_MAX
+    private final int[] keyCount = new int[11]; // GB_KEY_MAX + specials
 
-    TouchOverlayView(Context ctx, KeyListener l) { super(ctx); this.listener = l; }
+    TouchOverlayView(Context ctx, ControlListener l) { super(ctx); this.listener = l; }
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
         float u = Math.min(w, h) / 10f;            // unit
@@ -34,6 +38,9 @@ class TouchOverlayView extends View {
         b      = new RectF(w - u*3.3f, dpadCy + u*0.2f, w - u*1.9f, dpadCy + u*1.6f);
         start  = new RectF(w/2f + u*0.2f, h - u*1.4f, w/2f + u*2.2f, h - u*0.4f);
         select = new RectF(w/2f - u*2.2f, h - u*1.4f, w/2f - u*0.2f, h - u*0.4f);
+        rewind = new RectF(dpadCx - u, dpadCy - u*3.4f, dpadCx + u, dpadCy - u*2.4f);
+        turbo  = new RectF(w - u*2.9f, dpadCy - u*3.0f, w - u*0.9f, dpadCy - u*2.0f);
+        menu   = new RectF(w - u*1.5f, u*0.4f, w - u*0.4f, u*1.5f);
     }
 
     private int keyAt(float x, float y) {
@@ -45,25 +52,45 @@ class TouchOverlayView extends View {
         if (b.contains(x, y)) return NativeBridge.KEY_B;
         if (start.contains(x, y)) return NativeBridge.KEY_START;
         if (select.contains(x, y)) return NativeBridge.KEY_SELECT;
+        if (rewind.contains(x, y)) return SPECIAL_REWIND;
+        if (turbo.contains(x, y)) return SPECIAL_TURBO;
+        if (menu.contains(x, y)) return SPECIAL_MENU;
         return -1;
     }
 
-    private void press(int pointerId, int k) {          // k in 0..7
+    private void press(int pointerId, int k) {
         Integer old = pointerKey.get(pointerId);
         if (old != null && old == k) return;            // already on this key
         if (old != null) releasePointer(pointerId);     // moved off previous key
         pointerKey.put(pointerId, k);
-        if (keyCount[k]++ == 0) listener.onKey(k, true);
+        if (k == SPECIAL_MENU) {
+            listener.onSpecial(SPECIAL_MENU, true);
+            return;
+        }
+        if (keyCount[k]++ == 0) {
+            if (k < 8) listener.onKey(k, true);
+            else listener.onSpecial(k, true);
+        }
     }
 
     private void releasePointer(int pointerId) {
         Integer k = pointerKey.remove(pointerId);
-        if (k != null && --keyCount[k] == 0) listener.onKey(k, false);
+        if (k != null) {
+            if (k == SPECIAL_MENU) return;
+            if (--keyCount[k] == 0) {
+                if (k < 8) listener.onKey(k, false);
+                else listener.onSpecial(k, false);
+            }
+        }
     }
 
     private void releaseAll() {
         for (Integer k : pointerKey.values()) {
-            if (--keyCount[k] == 0) listener.onKey(k, false);
+            if (k == SPECIAL_MENU) continue;
+            if (--keyCount[k] == 0) {
+                if (k < 8) listener.onKey(k, false);
+                else listener.onSpecial(k, false);
+            }
         }
         pointerKey.clear();
         for (int i = 0; i < keyCount.length; i++) keyCount[i] = 0; // belt-and-suspenders
@@ -114,5 +141,15 @@ class TouchOverlayView extends View {
         paint.setColor(Color.argb(110, 180, 180, 180));
         if (start != null) c.drawRoundRect(start, 12, 12, paint);
         if (select != null) c.drawRoundRect(select, 12, 12, paint);
+        paint.setColor(Color.argb(110, 180, 180, 180));
+        if (rewind != null) c.drawRoundRect(rewind, 12, 12, paint);
+        if (turbo != null) c.drawRoundRect(turbo, 12, 12, paint);
+        if (menu != null) c.drawRoundRect(menu, 12, 12, paint);
+        paint.setColor(Color.argb(200, 255, 255, 255));
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(rewind != null ? rewind.height() * 0.6f : 24);
+        if (rewind != null) c.drawText("<<", rewind.centerX(), rewind.centerY() + rewind.height() * 0.2f, paint);
+        if (turbo != null) c.drawText(">>", turbo.centerX(), turbo.centerY() + turbo.height() * 0.2f, paint);
+        if (menu != null) c.drawText("=", menu.centerX(), menu.centerY() + menu.height() * 0.2f, paint);
     }
 }
