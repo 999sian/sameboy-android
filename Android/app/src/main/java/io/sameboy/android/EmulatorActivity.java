@@ -7,6 +7,9 @@ import android.view.Surface;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+import android.graphics.Bitmap;
+import android.os.Handler;
+import android.os.Looper;
 
 import java.io.File;
 import java.io.InputStream;
@@ -16,6 +19,19 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private long ctx = 0;
     private File savFile;
     private String romName = "rom";
+    private boolean menuOpen = false;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable batteryPoll = new Runnable() {
+        @Override public void run() {
+            if (ctx != 0 && !menuOpen && NativeBridge.nativeIsBatteryDirty(ctx)) {
+                NativeBridge.nativePause(ctx, true);   // save+clear as one parked unit
+                SaveStore.write(savFile, NativeBridge.nativeSaveBattery(ctx));
+                NativeBridge.nativeClearBatteryDirty(ctx);
+                NativeBridge.nativePause(ctx, false);
+            }
+            handler.postDelayed(this, 2000);
+        }
+    };
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -48,7 +64,15 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 if (ctx != 0) NativeBridge.nativeSetKey(ctx, k, pressed);
             }
             @Override public void onSpecial(int what, boolean pressed) {
-                // wired fully in the activity task
+                if (ctx == 0) return;
+                switch (what) {
+                    case TouchOverlayView.SPECIAL_REWIND:
+                        NativeBridge.nativeSetRewinding(ctx, pressed); break;
+                    case TouchOverlayView.SPECIAL_TURBO:
+                        NativeBridge.nativeSetTurbo(ctx, pressed); break;
+                    case TouchOverlayView.SPECIAL_MENU:
+                        if (pressed && !menuOpen) openMenu(); break;
+                }
             }
         });
         root.addView(surface);
@@ -56,11 +80,17 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         setContentView(root);
     }
 
-    @Override public void onSurfaceReady(Surface s) { if (ctx != 0) NativeBridge.nativeStart(ctx, s); }
+    @Override public void onSurfaceReady(Surface s) {
+        if (ctx != 0) {
+            NativeBridge.nativeStart(ctx, s);
+            if (menuOpen) NativeBridge.nativePause(ctx, true);
+        }
+    }
     @Override public void onSurfaceGone() { if (ctx != 0) NativeBridge.nativeStop(ctx); }
 
     @Override protected void onPause() {
         super.onPause();
+        handler.removeCallbacks(batteryPoll);
         if (ctx != 0) {
             NativeBridge.nativePause(ctx, true);
             SaveStore.write(savFile, NativeBridge.nativeSaveBattery(ctx));
@@ -68,7 +98,61 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
     @Override protected void onResume() {
         super.onResume();
-        if (ctx != 0) NativeBridge.nativePause(ctx, false);
+        if (ctx != 0 && !menuOpen) NativeBridge.nativePause(ctx, false);
+        handler.postDelayed(batteryPoll, 2000);
+    }
+
+    private void openMenu() {
+        menuOpen = true;
+        NativeBridge.nativePause(ctx, true);
+        GameMenuDialog.show(this, new GameMenuDialog.Host() {
+            @Override public void onMenuClosed() {
+                menuOpen = false;
+                if (ctx != 0) NativeBridge.nativePause(ctx, false);
+            }
+            @Override public void onSaveSlot(int slot) { saveStateToSlot(slot); }
+            @Override public void onLoadSlot(int slot) { loadStateFromSlot(slot); }
+            @Override public void onResetGame() { if (ctx != 0) NativeBridge.nativeReset(ctx); }
+            @Override public void onSwitchModel(int model) { if (ctx != 0) NativeBridge.nativeSwitchModel(ctx, model); }
+            @Override public void onExitGame() { finish(); }
+            @Override public java.io.File stateFile(int slot) {
+                return SaveStore.stateFile(EmulatorActivity.this, romName, slot);
+            }
+            @Override public Bitmap thumbnail(int slot) {
+                java.io.File t = SaveStore.stateThumb(EmulatorActivity.this, romName, slot);
+                return t.exists() ? android.graphics.BitmapFactory.decodeFile(t.getPath()) : null;
+            }
+        });
+    }
+
+    private void saveStateToSlot(int slot) {
+        byte[] state = NativeBridge.nativeSaveState(ctx);
+        if (state == null) {
+            Toast.makeText(this, "Save failed", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        SaveStore.write(SaveStore.stateFile(this, romName, slot), state);
+        int[] f = NativeBridge.nativeCopyFrame(ctx);
+        if (f != null && f.length >= 2) {
+            int w = f[0], h = f[1];
+            int[] px = new int[w * h];
+            for (int i = 0; i < w * h; i++) {
+                int p = f[2 + i];   // native ABGR → Bitmap ARGB
+                px[i] = (p & 0xFF00FF00) | ((p & 0xFF) << 16) | ((p >>> 16) & 0xFF);
+            }
+            Bitmap bmp = Bitmap.createBitmap(px, 0, w, w, h, Bitmap.Config.ARGB_8888);
+            try (java.io.FileOutputStream out =
+                     new java.io.FileOutputStream(SaveStore.stateThumb(this, romName, slot))) {
+                bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+            } catch (java.io.IOException ignored) {}
+        }
+    }
+
+    private void loadStateFromSlot(int slot) {
+        byte[] state = SaveStore.read(SaveStore.stateFile(this, romName, slot));
+        if (state == null || !NativeBridge.nativeLoadState(ctx, state)) {
+            Toast.makeText(this, "Load failed", Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override protected void onDestroy() {
