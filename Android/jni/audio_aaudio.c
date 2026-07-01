@@ -23,6 +23,7 @@ sb_audio *sb_audio_start(sb_ring *ring)
     if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return NULL;
 
     struct sb_audio *a = calloc(1, sizeof(*a));
+    if (!a) { AAudioStreamBuilder_delete(b); return NULL; }
     a->ring = ring;
 
     AAudioStreamBuilder_setDirection(b, AAUDIO_DIRECTION_OUTPUT);
@@ -57,6 +58,11 @@ void sb_audio_stop(sb_audio *a)
     if (!a) return;
     if (a->stream) {
         AAudioStream_requestStop(a->stream);
+        /* On API 26-29 close() can race a mid-flight data callback, which would
+           touch `a` after free(). Wait for the stream to leave STOPPING first. */
+        aaudio_stream_state_t state = AAUDIO_STREAM_STATE_STOPPING;
+        AAudioStream_waitForStateChange(a->stream, AAUDIO_STREAM_STATE_STOPPING,
+                                        &state, 300 * 1000000LL /* 300 ms */);
         AAudioStream_close(a->stream);
     }
     free(a);
