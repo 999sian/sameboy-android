@@ -91,6 +91,21 @@ static void test_flush_empties(void)
     sb_ring_destroy(r);
 }
 
+static void test_try_push_drop_on_full(void)
+{
+    sb_ring *r = sb_ring_create(2);
+    assert(sb_ring_try_push(r, 1, -1) == 1);
+    assert(sb_ring_try_push(r, 2, -2) == 1);
+    assert(sb_ring_try_push(r, 3, -3) == 0);   /* full: dropped, must not block */
+    int16_t out[2];
+    assert(sb_ring_pop(r, out, 1) == 1);
+    assert(out[0] == 1 && out[1] == -1);       /* FIFO intact, drop lost only the new frame */
+    assert(sb_ring_try_push(r, 4, -4) == 1);   /* space again */
+    assert(sb_ring_pop(r, out, 1) == 1 && out[0] == 2);
+    assert(sb_ring_pop(r, out, 1) == 1 && out[0] == 4);
+    sb_ring_destroy(r);
+}
+
 int main(void)
 {
     test_push_pop_fifo();
@@ -98,6 +113,7 @@ int main(void)
     test_blocking_pacing();
     test_shutdown_unblocks_producer();
     test_flush_empties();
+    test_try_push_drop_on_full();
     printf("ring_buffer: all tests passed\n");
     return 0;
 }

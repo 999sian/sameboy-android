@@ -49,6 +49,21 @@ void sb_ring_push(sb_ring *r, int16_t left, int16_t right)
     pthread_mutex_unlock(&r->mtx);
 }
 
+int sb_ring_try_push(sb_ring *r, int16_t left, int16_t right)
+{
+    pthread_mutex_lock(&r->mtx);
+    if (r->count == r->cap || r->shutdown) {
+        pthread_mutex_unlock(&r->mtx);
+        return 0;
+    }
+    r->buf[r->head * 2]     = left;
+    r->buf[r->head * 2 + 1] = right;
+    r->head = (r->head + 1) % r->cap;
+    r->count++;
+    pthread_mutex_unlock(&r->mtx);
+    return 1;
+}
+
 size_t sb_ring_pop(sb_ring *r, int16_t *dst, size_t frames)
 {
     pthread_mutex_lock(&r->mtx);
