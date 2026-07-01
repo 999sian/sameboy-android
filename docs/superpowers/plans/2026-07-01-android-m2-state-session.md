@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Never modify `Core/`** — all Core interaction through existing public APIs.
-- Build: `cd ~/SameBoy/Android && ANDROID_HOME=$HOME/Android ./gradlew :app:assembleDebug`.
+- Build: `cd ~/SameBoy/Android && JAVA_HOME=$HOME/Android/jdk17 ANDROID_HOME=$HOME/Android ./gradlew :app:assembleDebug`.
 - Host tests: `Android/jni/test/run_host_tests.sh` (must stay green end-to-end).
 - Turbo = `GB_set_turbo_mode(on, false)` — frame skip ENABLED (2nd arg is `no_frame_skip`; iOS `GBViewController.m:2183` passes false). Never `(on, on)`.
 - Rewind loop shape: **pop 2 → run 1 frame**; on pop failure (history empty) **hold** (sleep ~16 ms, skip run) until the button releases. Never resume forward play while held.
@@ -895,7 +895,7 @@ Java_io_sameboy_android_NativeBridge_nativeCopyFrame(JNIEnv *env, jclass c, jlon
 
 - [ ] **Step 3: Build**
 
-Run: `cd ~/SameBoy/Android && ANDROID_HOME=$HOME/Android ./gradlew :app:assembleDebug`
+Run: `cd ~/SameBoy/Android && JAVA_HOME=$HOME/Android/jdk17 ANDROID_HOME=$HOME/Android ./gradlew :app:assembleDebug`
 Expected: `BUILD SUCCESSFUL`. Then verify symbols:
 
 ```bash
@@ -1378,7 +1378,7 @@ git commit -m "feat(android): wire in-game menu, save-state slots with thumbnail
 - [ ] **Step 2: Clean build** —
 
 ```bash
-cd ~/SameBoy/Android && ANDROID_HOME=$HOME/Android ./gradlew :app:assembleDebug
+cd ~/SameBoy/Android && JAVA_HOME=$HOME/Android/jdk17 ANDROID_HOME=$HOME/Android ./gradlew :app:assembleDebug
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -c libsameboy_core.so
 ```
 Expected: `BUILD SUCCESSFUL`, `4` ABIs.
