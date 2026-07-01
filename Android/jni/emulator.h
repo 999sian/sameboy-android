@@ -3,6 +3,10 @@
 #include <stdint.h>
 #include "ring_buffer.h"
 
+#define SB_MAX_W 256
+#define SB_MAX_H 224
+#define SB_FB_MAX (SB_MAX_W * SB_MAX_H)
+
 typedef struct sb_emulator sb_emulator;
 
 sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,

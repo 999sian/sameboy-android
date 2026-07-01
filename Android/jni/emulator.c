@@ -4,8 +4,6 @@
 #include <string.h>
 #include <pthread.h>
 
-#define SB_MAX_W 256
-#define SB_MAX_H 224
 #define SB_BOOT_ROM_COUNT 10   /* GB_BOOT_ROM_AGB + 1 */
 
 struct sb_emulator {

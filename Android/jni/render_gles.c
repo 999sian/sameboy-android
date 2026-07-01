@@ -8,8 +8,6 @@
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "SameBoyGL", __VA_ARGS__)
 
-#define SB_FB_MAX (256 * 224)
-
 struct sb_renderer {
     ANativeWindow *win;
     sb_emulator *emu;
@@ -45,11 +43,17 @@ static void *render_thread(void *arg)
         EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_NONE
     };
     EGLConfig cfg; EGLint n;
-    eglChooseConfig(dpy, cfg_attr, &cfg, 1, &n);
+    if (!eglChooseConfig(dpy, cfg_attr, &cfg, 1, &n) || n == 0) { eglTerminate(dpy); return NULL; }
     EGLSurface surf = eglCreateWindowSurface(dpy, cfg, r->win, NULL);
     const EGLint ctx_attr[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
     EGLContext ctx = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, ctx_attr);
-    if (!eglMakeCurrent(dpy, surf, surf, ctx)) { LOGE("eglMakeCurrent failed"); return NULL; }
+    if (!eglMakeCurrent(dpy, surf, surf, ctx)) {
+        LOGE("eglMakeCurrent failed");
+        eglDestroySurface(dpy, surf);
+        eglDestroyContext(dpy, ctx);
+        eglTerminate(dpy);
+        return NULL;
+    }
 
     GLuint prog = glCreateProgram();
     glAttachShader(prog, compile(GL_VERTEX_SHADER, VS));
@@ -102,7 +106,7 @@ static void *render_thread(void *arg)
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        eglSwapBuffers(dpy, surf);   /* paces to display vsync */
+        if (!eglSwapBuffers(dpy, surf)) break;   /* surface lost; exit loop to teardown */
     }
 
     eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -115,8 +119,9 @@ static void *render_thread(void *arg)
 sb_renderer *sb_render_start(ANativeWindow *win, sb_emulator *emu)
 {
     sb_renderer *r = calloc(1, sizeof(*r));
+    if (!r) return NULL;
     r->win = win; r->emu = emu; r->running = 1;
-    pthread_create(&r->thread, NULL, render_thread, r);
+    if (pthread_create(&r->thread, NULL, render_thread, r) != 0) { free(r); return NULL; }
     return r;
 }
 
