@@ -318,17 +318,21 @@ What requires **your** hardware (documented as a smoke checklist I hand over):
   renders, audio plays, touch controls move the game, `.sav` persists across relaunch.
   (No device/emulator is available here, so "pixels on screen" is verified by you.)
 
-## 10. Risks & open questions
+## 10. Resolved decisions & residual risks
 
-- **rgbds on the build host** — needed for authentic boot ROMs. Mitigated by build-time
-  fetch/build in userland + graceful skip. Confirm you're OK bundling SameBoy's boot ROMs
-  in the APK (they are open source and in-tree).
-- **AAudio `minSdk 26`** — excludes Android <8.0 (~a few % of devices). If wider reach is
-  required later, an `AudioTrack` fallback can be added. Confirm 26 is acceptable.
+Decisions (confirmed 2026-07-01):
+- **Bundle boot ROMs: YES.** SameBoy's own Expat-licensed boot ROMs (built from
+  `BootROMs/*.asm`) ship in the APK. Authentic boot animation by default.
+- **minSdk 26 + AAudio: YES.** Pure-C audio, no new deps, ~97% device coverage.
+- **Application ID: `io.sameboy.android`.**
+
+Residual risks:
+- **rgbds on the build host** — required to build the bundled boot ROMs. Mitigated by
+  building/fetching rgbds in userland at build time + graceful skip (boot-ROM-less run)
+  if it is genuinely unavailable, so `assembleDebug` never hard-fails on its absence.
 - **`GB_set_key_state` cross-thread** — SDL sets keys from a non-emu thread already; if a
   data race is observed under TSAN we route key events through an atomic bitmask applied
   at the top of `GB_run_frame`. Low risk.
-- **Package id** — proposed `io.sameboy.android`. Confirm/adjust.
 
 ## 11. Parity roadmap (context; each later item = its own spec)
 
