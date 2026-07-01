@@ -10,7 +10,9 @@ final class SaveStore {
     private SaveStore() {}
 
     static File savFile(Context ctx, String romName) {
-        File dir = new File(ctx.getExternalFilesDir(null), "saves");
+        File base = ctx.getExternalFilesDir(null);
+        if (base == null) android.util.Log.e("SameBoy", "external files dir unavailable; battery saves may fail");
+        File dir = new File(base, "saves");
         if (!dir.exists()) dir.mkdirs();
         return new File(dir, romName + ".sav");
     }
@@ -27,6 +29,6 @@ final class SaveStore {
     static void write(File f, byte[] data) {
         if (data == null) return;
         try (FileOutputStream out = new FileOutputStream(f)) { out.write(data); }
-        catch (IOException ignored) {}
+        catch (IOException e) { android.util.Log.e("SameBoy", "battery save failed: " + f, e); }
     }
 }

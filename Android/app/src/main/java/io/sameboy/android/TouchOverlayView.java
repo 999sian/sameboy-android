@@ -17,8 +17,9 @@ class TouchOverlayView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     // regions computed in onSizeChanged
     private RectF up, down, left, right, a, b, start, select;
-    // track which pointer id is over which key
+    // per-pointer key assignment + per-key refcount (multiple fingers may hold one key)
     private final java.util.HashMap<Integer, Integer> pointerKey = new java.util.HashMap<>();
+    private final int[] keyCount = new int[8]; // GB_KEY_MAX
 
     TouchOverlayView(Context ctx, KeyListener l) { super(ctx); this.listener = l; }
 
@@ -47,15 +48,36 @@ class TouchOverlayView extends View {
         return -1;
     }
 
+    private void press(int pointerId, int k) {          // k in 0..7
+        Integer old = pointerKey.get(pointerId);
+        if (old != null && old == k) return;            // already on this key
+        if (old != null) releasePointer(pointerId);     // moved off previous key
+        pointerKey.put(pointerId, k);
+        if (keyCount[k]++ == 0) listener.onKey(k, true);
+    }
+
+    private void releasePointer(int pointerId) {
+        Integer k = pointerKey.remove(pointerId);
+        if (k != null && --keyCount[k] == 0) listener.onKey(k, false);
+    }
+
+    private void releaseAll() {
+        for (Integer k : pointerKey.values()) {
+            if (--keyCount[k] == 0) listener.onKey(k, false);
+        }
+        pointerKey.clear();
+        for (int i = 0; i < keyCount.length; i++) keyCount[i] = 0; // belt-and-suspenders
+    }
+
     @Override public boolean onTouchEvent(MotionEvent e) {
         int action = e.getActionMasked();
-        int idx = e.getActionIndex();
-        int id = e.getPointerId(idx);
         switch (action) {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN: {
+                int idx = e.getActionIndex();
+                int id = e.getPointerId(idx);
                 int k = keyAt(e.getX(idx), e.getY(idx));
-                if (k >= 0) { pointerKey.put(id, k); listener.onKey(k, true); }
+                if (k >= 0) press(id, k);
                 break;
             }
             case MotionEvent.ACTION_MOVE: {
@@ -63,19 +85,20 @@ class TouchOverlayView extends View {
                     int pid = e.getPointerId(i);
                     int newK = keyAt(e.getX(i), e.getY(i));
                     Integer oldK = pointerKey.get(pid);
-                    if (oldK == null || oldK != (Integer) newK) {
-                        if (oldK != null) listener.onKey(oldK, false);
-                        if (newK >= 0) { pointerKey.put(pid, newK); listener.onKey(newK, true); }
-                        else pointerKey.remove(pid);
-                    }
+                    int oldVal = (oldK == null) ? -1 : oldK;
+                    if (oldVal == newK) continue;         // no change for this finger
+                    if (newK >= 0) press(pid, newK);      // press() releases the old key first
+                    else releasePointer(pid);             // slid off all buttons
                 }
                 break;
             }
             case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_POINTER_UP: {
+                releasePointer(e.getPointerId(e.getActionIndex()));
+                break;
+            }
             case MotionEvent.ACTION_CANCEL: {
-                Integer k = pointerKey.remove(id);
-                if (k != null) listener.onKey(k, false);
+                releaseAll();                              // cancel kills ALL pointers
                 break;
             }
         }
