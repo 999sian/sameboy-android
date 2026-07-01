@@ -48,12 +48,15 @@ def bootRomOut = file("src/main/assets/bootroms")
 
 tasks.register("generateBootRoms") {
     def repoRoot = file("${rootDir}/..")
-    outputs.dir bootRomOut
+    // Always run: `make bootroms` is a ~1s no-op when unchanged, and this picks up
+    // BootROM .asm edits and a later rgbds install (no up-to-date latch).
+    outputs.upToDateWhen { false }
     doLast {
         bootRomOut.mkdirs()
         // Prefer ~/.local/bin (where rgbds lives) ahead of the inherited PATH.
         def home = System.getProperty("user.home")
-        def path = "${home}/.local/bin:${System.getenv('PATH')}".toString()
+        def sysPath = System.getenv('PATH') ?: ''
+        def path = "${home}/.local/bin:${sysPath}".toString()
         if (!path.split(':').any { new File(it, 'rgbasm').canExecute() }) {
             logger.warn("rgbds not found on PATH; skipping boot ROM generation. App will run boot-ROM-less.")
             return
