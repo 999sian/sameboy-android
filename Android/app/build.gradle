@@ -41,3 +41,45 @@ dependencies {
         implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22")
     }
 }
+
+// Generate SameBoy's open-source boot ROMs (repo-root `make bootroms`, needs rgbds)
+// and bundle them as APK assets. Warns + skips if rgbds is absent (app runs boot-ROM-less).
+def bootRomOut = file("src/main/assets/bootroms")
+
+tasks.register("generateBootRoms") {
+    def repoRoot = file("${rootDir}/..")
+    outputs.dir bootRomOut
+    doLast {
+        bootRomOut.mkdirs()
+        // Prefer ~/.local/bin (where rgbds lives) ahead of the inherited PATH.
+        def home = System.getProperty("user.home")
+        def path = "${home}/.local/bin:${System.getenv('PATH')}".toString()
+        if (!path.split(':').any { new File(it, 'rgbasm').canExecute() }) {
+            logger.warn("rgbds not found on PATH; skipping boot ROM generation. App will run boot-ROM-less.")
+            return
+        }
+        def pb = new ProcessBuilder('make', 'bootroms')
+                .directory(repoRoot)
+                .redirectErrorStream(true)
+        pb.environment().put('PATH', path)
+        def proc = pb.start()
+        def out = proc.inputStream.text
+        if (proc.waitFor() != 0) {
+            throw new GradleException("make bootroms failed:\n${out}")
+        }
+        def src = file("${repoRoot}/build/bin/BootROMs")
+        ["dmg_boot.bin", "mgb_boot.bin", "cgb0_boot.bin", "cgb_boot.bin",
+         "agb_boot.bin", "sgb_boot.bin", "sgb2_boot.bin"].each { name ->
+            def f = new File(src, name)
+            if (f.exists()) {
+                new File(bootRomOut, name).bytes = f.bytes
+            } else {
+                logger.warn("boot ROM ${name} not produced; skipping")
+            }
+        }
+    }
+}
+
+// Run before assets are merged for every variant.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+     .configureEach { dependsOn "generateBootRoms" }
