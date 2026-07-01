@@ -23,4 +23,8 @@ echo "== emulator =="
 eval cc $CFLAGS test/test_emulator.c emulator.c ring_buffer.c $CORE_SRC -lpthread -lm -o /tmp/sb_temu
 /tmp/sb_temu
 
+echo "== session =="
+eval cc -Itest/shim $CFLAGS test/test_session.c session.c emulator.c ring_buffer.c test/shim_stubs.c $CORE_SRC -lpthread -lm -o /tmp/sb_tses
+/tmp/sb_tses
+
 echo "ALL HOST TESTS PASSED"
