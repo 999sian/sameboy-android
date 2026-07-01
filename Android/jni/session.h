@@ -6,6 +6,9 @@
 
 typedef struct sb_session sb_session;
 
+/* All functions tolerate s == NULL (no-op; save_battery returns 0).
+   sb_session_start takes ownership of win even when it bails out early. */
+
 sb_session *sb_session_create(int model, const uint8_t *rom, size_t rom_len,
                               const uint8_t *sav, size_t sav_len);
 void        sb_session_set_boot_rom(sb_session *s, int type, const uint8_t *data, size_t len);

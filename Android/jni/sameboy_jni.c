@@ -98,6 +98,7 @@ Java_io_sameboy_android_NativeBridge_nativeSaveBattery(JNIEnv *env, jclass c, jl
     size_t n = sb_session_save_battery((sb_session *)(uintptr_t)ctx, &buf);
     if (n == 0) return NULL;
     jbyteArray arr = (*env)->NewByteArray(env, (jsize)n);
+    if (!arr) { free(buf); return NULL; }
     (*env)->SetByteArrayRegion(env, arr, 0, (jsize)n, (const jbyte *)buf);
     free(buf);
     return arr;
