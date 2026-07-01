@@ -65,10 +65,11 @@ sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
     sb_emulator *e = calloc(1, sizeof(*e));
     if (!e) return NULL;
     pthread_mutex_init(&e->fb_mtx, NULL);
-    /* 2 s of slack: sb_ring_push blocks when full, so a consumer that stalls
-       (or a consumer-less test running 60 frames = 48000 samples) must not
-       deadlock the emulation thread. The audio driver paces via pop rate. */
-    e->audio = sb_ring_create(SB_AUDIO_SAMPLE_RATE * 2);
+    /* ~100 ms ring. sb_ring_push blocks when full, so at runtime the AAudio
+       callback's pop rate paces the emulation thread (audio is the master
+       clock). Kept small so the emu thread never runs far ahead of playback.
+       The host test must therefore drain the ring as it steps frames. */
+    e->audio = sb_ring_create(SB_AUDIO_SAMPLE_RATE / 10);
     e->back = 0;
     e->front_w = 160; e->front_h = 144;
 

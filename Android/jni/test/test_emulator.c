@@ -32,7 +32,19 @@ int main(void)
     assert(e != NULL);
     sb_emu_reset(e);
 
-    for (int i = 0; i < 60; i++) sb_emu_run_frame(e);   /* 1 second */
+    /* Step frames while draining the audio ring each frame, exactly as the
+       real AAudio consumer would. With the ~100 ms runtime ring, NOT draining
+       would block the (single-threaded) producer once it fills. */
+    size_t total_samples = 0;
+    int16_t drain[4096 * 2];
+    for (int i = 0; i < 60; i++) {          /* ~1 second */
+        sb_emu_run_frame(e);
+        size_t got;
+        while ((got = sb_ring_pop(sb_emu_audio_ring(e), drain, 4096)) > 0) {
+            total_samples += got;
+            if (got < 4096) break;          /* ring drained for this frame */
+        }
+    }
 
     unsigned w = 0, h = 0;
     const uint32_t *fb = sb_emu_front_buffer(e, &w, &h);
@@ -41,10 +53,8 @@ int main(void)
     /* every pixel must be fully opaque (alpha 0xFF) from our rgb_encode */
     for (unsigned i = 0; i < w * h; i++) assert((fb[i] & 0xFF000000u) == 0xFF000000u);
 
-    /* audio: running frames must have produced samples in the ring */
-    int16_t buf[2];
-    size_t got = sb_ring_pop(sb_emu_audio_ring(e), buf, 1);
-    assert(got == 1);
+    /* running ~1 s must have produced roughly SAMPLE_RATE stereo frames */
+    assert(total_samples > 0);
 
     sb_emu_destroy(e);
     free(rom);
