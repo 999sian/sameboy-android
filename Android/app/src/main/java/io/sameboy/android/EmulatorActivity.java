@@ -22,8 +22,9 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         byte[] rom = readAll(getIntent().getData());
-        // Native layer assumes a non-null, non-empty ROM; reject here.
-        if (rom == null || rom.length == 0) {
+        // Native layer assumes a real ROM; reject null/empty and files smaller
+        // than a GB cartridge header + entry point (0x150 bytes).
+        if (rom == null || rom.length < 0x150) {
             Toast.makeText(this, "Could not read ROM", Toast.LENGTH_LONG).show();
             finish();
             return;
@@ -80,11 +81,19 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
 
     private String displayName(Uri uri) {
-        String last = uri.getLastPathSegment();
-        if (last == null) return "rom";
-        int slash = last.lastIndexOf('/');
-        String name = slash >= 0 ? last.substring(slash + 1) : last;
+        String name = null;
+        try (android.database.Cursor c = getContentResolver().query(uri,
+                new String[]{ android.provider.OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                int i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                if (i >= 0) name = c.getString(i);
+            }
+        } catch (Exception ignored) {}
+        if (name == null) name = uri.getLastPathSegment();
+        if (name == null) name = "rom";
         int dot = name.lastIndexOf('.');
-        return dot > 0 ? name.substring(0, dot) : name;
+        if (dot > 0) name = name.substring(0, dot);
+        name = name.replaceAll("[/:\\\\]", "_");
+        return name.isEmpty() ? "rom" : name;
     }
 }

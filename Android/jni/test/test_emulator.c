@@ -53,6 +53,13 @@ int main(void)
     /* every pixel must be fully opaque (alpha 0xFF) from our rgb_encode */
     for (unsigned i = 0; i < w * h; i++) assert((fb[i] & 0xFF000000u) == 0xFF000000u);
 
+    /* render-path API: copy_front must agree with front_buffer */
+    static uint32_t staging[256 * 224];
+    unsigned cw = 0, ch = 0;
+    sb_emu_copy_front(e, staging, &cw, &ch);
+    assert(cw == w && ch == h);
+    for (unsigned i = 0; i < cw * ch; i++) assert((staging[i] & 0xFF000000u) == 0xFF000000u);
+
     /* running ~1 s must have produced roughly SAMPLE_RATE stereo frames */
     assert(total_samples > 0);
 

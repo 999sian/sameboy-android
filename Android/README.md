@@ -91,4 +91,9 @@ Then launch **SameBoy**, tap **Open ROM**, pick a `.gb` or `.gbc` file, and conf
   local / GB-sized ROMs). Background read is planned.
 - No audio-device-disconnect (reconnection) handling: unplugging headphones mid-game
   stops audio until the session is restarted.
+- Battery is saved on pause/backgrounding only (no periodic GB_get_battery_dirty
+  polling yet): a crash or process kill while foregrounded loses progress since
+  the last backgrounding.
+- Only clearly-too-small files are rejected; a large non-ROM file selected via the
+  */* picker boots to a black screen (the Core does no content validation).
 - No save states, settings, palette editor, gamepad remapping, or link cable yet.

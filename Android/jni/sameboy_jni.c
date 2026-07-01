@@ -45,8 +45,16 @@ Java_io_sameboy_android_NativeBridge_nativeCreate(JNIEnv *env, jclass c, jint mo
     (void)c;
     jsize rlen = (*env)->GetArrayLength(env, rom);
     jbyte *rbytes = (*env)->GetByteArrayElements(env, rom, NULL);
+    if (!rbytes) return 0;
     jbyte *sbytes = NULL; jsize slen = 0;
-    if (sav) { slen = (*env)->GetArrayLength(env, sav); sbytes = (*env)->GetByteArrayElements(env, sav, NULL); }
+    if (sav) {
+        slen = (*env)->GetArrayLength(env, sav);
+        sbytes = (*env)->GetByteArrayElements(env, sav, NULL);
+        if (!sbytes) {
+            (*env)->ReleaseByteArrayElements(env, rom, rbytes, JNI_ABORT);
+            return 0;
+        }
+    }
 
     sb_session *s = sb_session_create(model, (const uint8_t *)rbytes, (size_t)rlen,
                                       (const uint8_t *)sbytes, (size_t)slen);
