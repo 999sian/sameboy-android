@@ -3,6 +3,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <unistd.h>
 
 static void test_push_pop_fifo(void)
 {
@@ -53,11 +54,50 @@ static void test_blocking_pacing(void)
     sb_ring_destroy(r);
 }
 
+static volatile int shutdown_producer_done;
+static void *shutdown_producer(void *arg)
+{
+    sb_ring *r = arg;
+    for (int i = 0; i < 5; i++) sb_ring_push(r, (int16_t)i, (int16_t)i);
+    shutdown_producer_done = 1;
+    return NULL;
+}
+
+static void test_shutdown_unblocks_producer(void)
+{
+    sb_ring *r = sb_ring_create(2);
+    pthread_t t;
+    pthread_create(&t, NULL, shutdown_producer, r);
+    usleep(100 * 1000);              /* let producer fill and block on 3rd push */
+    sb_ring_shutdown(r);
+    usleep(100 * 1000);
+    assert(shutdown_producer_done == 1); /* clean failure instead of a join hang */
+    pthread_join(t, NULL);
+    sb_ring_destroy(r);
+}
+
+static void test_flush_empties(void)
+{
+    sb_ring *r = sb_ring_create(8);
+    sb_ring_push(r, 1, 1);
+    sb_ring_push(r, 2, 2);
+    sb_ring_push(r, 3, 3);
+    sb_ring_flush(r);
+    int16_t out[2] = {0x5a, 0x5a};
+    assert(sb_ring_pop(r, out, 1) == 0);       /* empty after flush */
+    sb_ring_push(r, 42, -42);                  /* ring still works */
+    assert(sb_ring_pop(r, out, 1) == 1);
+    assert(out[0] == 42 && out[1] == -42);
+    sb_ring_destroy(r);
+}
+
 int main(void)
 {
     test_push_pop_fifo();
     test_underrun_zero_fill();
     test_blocking_pacing();
+    test_shutdown_unblocks_producer();
+    test_flush_empties();
     printf("ring_buffer: all tests passed\n");
     return 0;
 }

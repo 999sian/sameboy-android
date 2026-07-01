@@ -15,10 +15,12 @@ struct sb_ring {
 
 sb_ring *sb_ring_create(size_t capacity_frames)
 {
+    if (capacity_frames == 0) return NULL;
     sb_ring *r = calloc(1, sizeof(*r));
     if (!r) return NULL;
     r->cap = capacity_frames;
     r->buf = calloc(capacity_frames * 2, sizeof(int16_t));
+    if (!r->buf) { free(r); return NULL; }
     pthread_mutex_init(&r->mtx, NULL);
     pthread_cond_init(&r->not_full, NULL);
     return r;
