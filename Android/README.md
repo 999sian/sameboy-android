@@ -61,16 +61,28 @@ Compiles and runs the platform-independent C on the build host:
 
 Expected final line: `ALL HOST TESTS PASSED`.
 
-## On-device smoke test (manual — requires a device or emulator)
+## On-device smoke test
 
-The native build, `.so` loading, boot-ROM bundling, and host-side logic are verified by
-the CI/host steps above. The following require real hardware/an AVD and are **not**
-covered by an automated test yet:
+**Status: this build was verified on-device in Waydroid (x86_64 Android) — the app
+installs, boots a ROM, renders in Game Boy Color, responds to the on-screen controls,
+and streams live 48 kHz AAudio.** Verified with the open-source homebrew
+[Libbet and the Magic Floor](https://github.com/pinobatch/libbet) (`libbet.gb`):
 
+- Installs on x86_64 (native `libsameboy_core.so` loads), `MainActivity` launcher renders.
+- SAF `ACTION_OPEN_DOCUMENT` picker opens; selecting the ROM launches `EmulatorActivity`.
+- Boot ROM + ROM load succeed; GLES2 renders the game (integer-scaled, centered, letterboxed).
+- Touch D-pad + A/B/Start/Select render AND drive the game (title → story → playable Magic Floor).
+- `AudioFlinger` shows our app's AAudio track active: PCM_16 / stereo / 48000 Hz, frames served.
+- No crash across the flow; app stays foreground.
+
+Not yet exercised on-device (no blocker): **battery `.sav` persistence** — `libbet.gb` is a
+ROM-ONLY cart with no save RAM; needs a battery-backed ROM to visually confirm the
+load-on-open / flush-on-pause path (the synchronous-pause fix makes the flush race-free).
+
+To reproduce on any device or emulator:
 ```sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
-
 Then launch **SameBoy**, tap **Open ROM**, pick a `.gb` or `.gbc` file, and confirm:
 
 - [ ] The game renders (picture, not a black screen), correctly scaled and centered
