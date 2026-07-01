@@ -14,6 +14,7 @@ struct sb_emulator {
     pthread_mutex_t fb_mtx;
     sb_ring *audio;
     struct { uint8_t *data; size_t len; } boot[SB_BOOT_ROM_COUNT];  /* owned copies */
+    const atomic_bool *audio_drop;
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -37,7 +38,12 @@ static void vblank_cb(GB_gameboy_t *gb, GB_vblank_type_t type)
 static void audio_cb(GB_gameboy_t *gb, GB_sample_t *sample)
 {
     sb_emulator *e = GB_get_user_data(gb);
-    sb_ring_push(e->audio, sample->left, sample->right);
+    if (e->audio_drop && atomic_load_explicit(e->audio_drop, memory_order_relaxed)) {
+        sb_ring_try_push(e->audio, sample->left, sample->right);
+    }
+    else {
+        sb_ring_push(e->audio, sample->left, sample->right);
+    }
 }
 
 static void boot_rom_cb(GB_gameboy_t *gb, GB_boot_rom_t type)
@@ -82,6 +88,7 @@ sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
 
     GB_load_rom_from_buffer(&e->gb, rom, rom_len);
     if (sav && sav_len) GB_load_battery_from_buffer(&e->gb, sav, sav_len);
+    GB_set_rewind_length(&e->gb, 120);
     return e;
 }
 
@@ -138,6 +145,61 @@ size_t sb_emu_save_battery(sb_emulator *e, uint8_t **out)
     GB_save_battery_to_buffer(&e->gb, buf, size);
     *out = buf;
     return (size_t)size;
+}
+
+void sb_emu_set_audio_drop(sb_emulator *e, const atomic_bool *drop_on_full)
+{
+    e->audio_drop = drop_on_full;
+}
+
+size_t sb_emu_save_state(sb_emulator *e, uint8_t **out)
+{
+    size_t n = GB_get_save_state_size(&e->gb);
+    uint8_t *buf = malloc(n);
+    if (!buf) return 0;
+    GB_save_state_to_buffer(&e->gb, buf);
+    *out = buf;
+    return n;
+}
+
+int sb_emu_load_state(sb_emulator *e, const uint8_t *buf, size_t n)
+{
+    GB_model_t model = 0;
+    if (GB_get_state_model_from_buffer(buf, n, &model) == 0 &&
+        GB_get_model(&e->gb) != model) {
+        GB_switch_model_and_reset(&e->gb, model);   /* mirrors iOS loadStateFromFile: */
+    }
+    return GB_load_state_from_buffer(&e->gb, buf, n);
+}
+
+void sb_emu_switch_model(sb_emulator *e, int model)
+{
+    GB_switch_model_and_reset(&e->gb, (GB_model_t)model);
+}
+
+void sb_emu_set_rewind_length(sb_emulator *e, double seconds)
+{
+    GB_set_rewind_length(&e->gb, seconds);
+}
+
+void sb_emu_set_turbo(sb_emulator *e, int on)
+{
+    GB_set_turbo_mode(&e->gb, on != 0, false);   /* frame skip ON in turbo */
+}
+
+int sb_emu_rewind_pop(sb_emulator *e)
+{
+    return GB_rewind_pop(&e->gb) ? 1 : 0;
+}
+
+int sb_emu_battery_dirty(sb_emulator *e)
+{
+    return GB_get_battery_dirty(&e->gb) ? 1 : 0;
+}
+
+void sb_emu_clear_battery_dirty(sb_emulator *e)
+{
+    GB_clear_battery_dirty(&e->gb);
 }
 
 void sb_emu_destroy(sb_emulator *e)

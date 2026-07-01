@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "ring_buffer.h"
+#include <stdatomic.h>
 
 #define SB_MAX_W 256
 #define SB_MAX_H 224
@@ -25,5 +26,15 @@ void         sb_emu_set_key(sb_emulator *e, int gb_key_index, int pressed);
 size_t       sb_emu_save_battery(sb_emulator *e, uint8_t **out_malloced);
 /* Precondition: stop and join the emulation/render threads before calling. */
 void         sb_emu_destroy(sb_emulator *e);
+
+void   sb_emu_set_audio_drop(sb_emulator *e, const atomic_bool *drop_on_full); /* NULL = always block */
+size_t sb_emu_save_state(sb_emulator *e, uint8_t **out_malloced);       /* 0 on failure; caller frees */
+int    sb_emu_load_state(sb_emulator *e, const uint8_t *buf, size_t n); /* 0 = ok; auto model-switch */
+void   sb_emu_switch_model(sb_emulator *e, int model);                  /* GB_model_t value */
+void   sb_emu_set_rewind_length(sb_emulator *e, double seconds);
+void   sb_emu_set_turbo(sb_emulator *e, int on);                        /* GB_set_turbo_mode(on, false) */
+int    sb_emu_rewind_pop(sb_emulator *e);                               /* 1 = popped, 0 = history empty */
+int    sb_emu_battery_dirty(sb_emulator *e);                            /* emu thread / parked only */
+void   sb_emu_clear_battery_dirty(sb_emulator *e);
 
 #define SB_AUDIO_SAMPLE_RATE 48000
