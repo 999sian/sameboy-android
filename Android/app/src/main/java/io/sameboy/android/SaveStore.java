@@ -9,12 +9,27 @@ import java.io.RandomAccessFile;
 final class SaveStore {
     private SaveStore() {}
 
-    static File savFile(Context ctx, String romName) {
+    /** External app storage when mounted, else internal — never null (fixes M1 NPE). */
+    private static File subDir(Context ctx, String name) {
         File base = ctx.getExternalFilesDir(null);
-        if (base == null) android.util.Log.e("SameBoy", "external files dir unavailable; battery saves may fail");
-        File dir = new File(base, "saves");
+        if (base == null) base = ctx.getFilesDir();
+        File dir = new File(base, name);
         if (!dir.exists()) dir.mkdirs();
-        return new File(dir, romName + ".sav");
+        return dir;
+    }
+
+    static File savFile(Context ctx, String romName) {
+        return new File(subDir(ctx, "saves"), romName + ".sav");
+    }
+
+    /** Save-state slot file: states/<rom>.s<slot> (mirrors iOS GBROMManager). */
+    static File stateFile(Context ctx, String romName, int slot) {
+        return new File(subDir(ctx, "states"), romName + ".s" + slot);
+    }
+
+    /** Slot thumbnail PNG, sibling of the state file. */
+    static File stateThumb(Context ctx, String romName, int slot) {
+        return new File(subDir(ctx, "states"), romName + ".s" + slot + ".png");
     }
 
     static byte[] read(File f) {
@@ -29,6 +44,6 @@ final class SaveStore {
     static void write(File f, byte[] data) {
         if (data == null) return;
         try (FileOutputStream out = new FileOutputStream(f)) { out.write(data); }
-        catch (IOException e) { android.util.Log.e("SameBoy", "battery save failed: " + f, e); }
+        catch (IOException e) { android.util.Log.e("SameBoy", "write failed: " + f, e); }
     }
 }
