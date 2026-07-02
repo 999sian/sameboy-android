@@ -11,6 +11,14 @@ import android.widget.TextView;
 import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.InputDevice;
+import android.os.Vibrator;
+import android.os.VibratorManager;
+import android.os.VibrationEffect;
+import android.hardware.input.InputManager;
+import android.view.View;
 
 import java.io.File;
 import java.io.InputStream;
@@ -40,6 +48,24 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             handler.postDelayed(this, 2000);
         }
     };
+    private GamepadMapper pad;
+    private Vibrator vibrator;
+    private boolean rumbling = false;
+    private final boolean[] axisState = new boolean[4];   // right,left,up,down
+    private final Runnable rumblePoll = new Runnable() {
+        @Override public void run() {
+            if (ctx != 0) {
+                int amp = NativeBridge.nativeRumbleAmplitude(ctx);
+                driveRumble(amp);
+            }
+            handler.postDelayed(this, 50);
+        }
+    };
+    private final InputManager.InputDeviceListener padListener = new InputManager.InputDeviceListener() {
+        @Override public void onInputDeviceAdded(int id) { refreshOverlayVisibility(); }
+        @Override public void onInputDeviceRemoved(int id) { refreshOverlayVisibility(); }
+        @Override public void onInputDeviceChanged(int id) { refreshOverlayVisibility(); }
+    };
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -57,6 +83,13 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         romName = (keyExtra != null && !keyExtra.isEmpty()) ? keyExtra : displayName(data);
         savFile = SaveStore.savFile(this, romName);
         settings = new Settings(this);
+        pad = new GamepadMapper(this);
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            VibratorManager vm = (VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE);
+            vibrator = vm != null ? vm.getDefaultVibrator() : null;
+        } else {
+            vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        }
 
         // Read the ROM off the main thread (SAF read can ANR on slow providers).
         io.execute(() -> {
@@ -106,6 +139,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         root.addView(surface);
         root.addView(overlay);
         setContentView(root);
+        refreshOverlayVisibility();
     }
 
     private byte[] readRom(Uri uri, String zipEntry) {
@@ -129,6 +163,11 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     @Override protected void onPause() {
         super.onPause();
         handler.removeCallbacks(batteryPoll);
+        handler.removeCallbacks(rumblePoll);
+        InputManager im = (InputManager) getSystemService(INPUT_SERVICE);
+        if (im != null) im.unregisterInputDeviceListener(padListener);
+        if (vibrator != null) { try { vibrator.cancel(); } catch (Exception ignored) {} }
+        rumbling = false;
         if (ctx != 0) {
             NativeBridge.nativePause(ctx, true);
             SaveStore.write(savFile, NativeBridge.nativeSaveBattery(ctx));
@@ -142,6 +181,53 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             NativeBridge.nativePause(ctx, false);
         }
         handler.postDelayed(batteryPoll, 2000);
+        InputManager im = (InputManager) getSystemService(INPUT_SERVICE);
+        if (im != null) im.registerInputDeviceListener(padListener, handler);
+        handler.postDelayed(rumblePoll, 50);
+        refreshOverlayVisibility();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        int gb = (ctx != 0) ? pad.gbKeyForKeycode(event.getKeyCode()) : -1;
+        if (gb >= 0 && event.getRepeatCount() == 0) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) { NativeBridge.nativeSetKey(ctx, gb, true); return true; }
+            if (event.getAction() == KeyEvent.ACTION_UP)   { NativeBridge.nativeSetKey(ctx, gb, false); return true; }
+        } else if (gb >= 0) {
+            return true;   // swallow auto-repeat for a held mapped key
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override public boolean onGenericMotionEvent(MotionEvent event) {
+        if (ctx != 0 && (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+                && event.getAction() == MotionEvent.ACTION_MOVE) {
+            boolean[] now = GamepadMapper.axisDpad(event);
+            int[] gbForAxis = { GamepadMapper.RIGHT, GamepadMapper.LEFT, GamepadMapper.UP, GamepadMapper.DOWN };
+            for (int i = 0; i < 4; i++) {
+                if (now[i] != axisState[i]) { NativeBridge.nativeSetKey(ctx, gbForAxis[i], now[i]); axisState[i] = now[i]; }
+            }
+            return true;
+        }
+        return super.onGenericMotionEvent(event);
+    }
+
+    private void driveRumble(int amp) {
+        if (vibrator == null || !vibrator.hasVibrator()) return;
+        if (amp > 0) {
+            int a = Math.max(1, Math.min(255, amp));
+            try {
+                if (vibrator.hasAmplitudeControl()) vibrator.vibrate(VibrationEffect.createOneShot(70, a));
+                else vibrator.vibrate(VibrationEffect.createOneShot(70, VibrationEffect.DEFAULT_AMPLITUDE));
+                rumbling = true;
+            } catch (Exception ignored) {}
+        } else if (rumbling) {
+            vibrator.cancel();
+            rumbling = false;
+        }
+    }
+
+    private void refreshOverlayVisibility() {
+        if (overlay != null) overlay.setVisibility(GamepadMapper.anyGamepadConnected() ? View.GONE : View.VISIBLE);
     }
 
     private void openMenu() {
