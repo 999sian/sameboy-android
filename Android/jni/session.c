@@ -219,6 +219,47 @@ int sb_session_rumble_amplitude(sb_session *s)
     return s ? sb_emu_rumble_amplitude(s->emu) : 0;
 }
 
+void sb_session_connect_printer(sb_session *s)
+{
+    if (!s) return;
+    int was = park_begin(s);
+    sb_emu_connect_printer(s->emu);
+    park_end(s, was);
+}
+
+void sb_session_disconnect_printer(sb_session *s)
+{
+    if (!s) return;
+    int was = park_begin(s);
+    sb_emu_disconnect_printer(s->emu);
+    park_end(s, was);
+}
+
+unsigned sb_session_printer_generation(sb_session *s)
+{
+    return s ? sb_emu_printer_generation(s->emu) : 0;
+}
+
+unsigned sb_session_printer_feed(sb_session *s, uint32_t *dst, unsigned max_rows)
+{
+    return s ? sb_emu_printer_feed(s->emu, dst, max_rows) : 0;
+}
+
+void sb_session_printer_clear(sb_session *s)
+{
+    if (s) sb_emu_printer_clear(s->emu);
+}
+
+bool sb_session_camera_wanted(sb_session *s)
+{
+    return s ? sb_emu_camera_wanted(s->emu) : false;
+}
+
+void sb_session_camera_deliver(sb_session *s, const uint8_t *gray)
+{
+    if (s) sb_emu_camera_deliver(s->emu, gray);
+}
+
 void sb_session_copy_frame(sb_session *s, uint32_t *dst, unsigned *w, unsigned *h)
 {
     if (!s) { *w = *h = 0; return; }

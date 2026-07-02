@@ -123,6 +123,17 @@ int main(void)
     int ramp = sb_session_rumble_amplitude(s);
     assert(ramp >= 0 && ramp <= 255);
 
+    /* --- printer connect while running self-parks, no deadlock (M7) --- */
+    sb_session_connect_printer(s);
+    unsigned g0 = sb_session_printer_generation(s);
+    (void)g0;
+    sb_session_disconnect_printer(s);
+    /* camera passthrough: wanted starts false, deliver doesn't crash */
+    assert(!sb_session_camera_wanted(s));
+    uint8_t gray[128 * 112];
+    memset(gray, 0x80, sizeof(gray));
+    sb_session_camera_deliver(s, gray);
+
     sb_session_stop(s);
     sb_session_destroy(s);
     free(rom);
