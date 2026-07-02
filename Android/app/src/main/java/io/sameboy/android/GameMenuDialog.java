@@ -25,6 +25,10 @@ final class GameMenuDialog {
         void onResetGame();
         void onSwitchModel(int model);
         void onOpenSettings();
+        void onConnectAccessory(int which);   // 0 = None, 1 = Printer
+        void onPrinterFeed();
+        boolean printerConnected();
+        boolean hasPrintouts();
         void onExitGame();
         File stateFile(int slot);
         Bitmap thumbnail(int slot);
@@ -33,7 +37,8 @@ final class GameMenuDialog {
     private GameMenuDialog() {}
 
     static void show(Activity a, Host h) {
-        final String[] items = { "Resume", "Save state", "Load state", "Reset", "Model", "Settings", "Exit" };
+        final String[] items = { "Resume", "Save state", "Load state", "Reset", "Model",
+                                 "Connect accessory", "Printer feed", "Settings", "Exit" };
         final boolean[] chained = { false };   // a submenu took over; don't unpause yet
         AlertDialog dlg = new AlertDialog.Builder(a)
             .setTitle("SameBoy")
@@ -43,8 +48,10 @@ final class GameMenuDialog {
                     case 2: chained[0] = true; showSlots(a, h, false); break;
                     case 3: h.onResetGame(); break;
                     case 4: chained[0] = true; showModels(a, h); break;
-                    case 5: chained[0] = true; h.onOpenSettings(); return;   // leaves menu; EmulatorActivity re-applies on resume
-                    case 6: h.onExitGame(); return;
+                    case 5: chained[0] = true; showAccessory(a, h); break;
+                    case 6: h.onPrinterFeed(); return;   // launches feed Activity; menu dismisses, onMenuClosed unpauses
+                    case 7: chained[0] = true; h.onOpenSettings(); return;   // leaves menu; EmulatorActivity re-applies on resume
+                    case 8: h.onExitGame(); return;
                     default: break;                   // 0 = Resume: just dismiss
                 }
             })
@@ -59,6 +66,21 @@ final class GameMenuDialog {
         AlertDialog dlg = new AlertDialog.Builder(a)
             .setTitle("Model (reboots the game)")
             .setItems(names, (d, which) -> h.onSwitchModel(models[which]))
+            .create();
+        dlg.setOnDismissListener(d -> h.onMenuClosed());
+        dlg.show();
+    }
+
+    private static void showAccessory(Activity a, Host h) {
+        final String[] opts = { a.getString(R.string.accessory_none),
+                                a.getString(R.string.accessory_printer) };
+        int current = h.printerConnected() ? 1 : 0;
+        AlertDialog dlg = new AlertDialog.Builder(a)
+            .setTitle(R.string.connect_accessory)
+            .setSingleChoiceItems(opts, current, (d, which) -> {
+                h.onConnectAccessory(which);
+                d.dismiss();
+            })
             .create();
         dlg.setOnDismissListener(d -> h.onMenuClosed());
         dlg.show();

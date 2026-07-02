@@ -33,6 +33,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private File savFile;
     private String romName = "rom";
     private boolean menuOpen = false;
+    private boolean printerConnected = false;
     private Settings settings;
     private TouchOverlayView overlay;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -255,6 +256,18 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 menuOpen = false;   // menu is closing; SettingsActivity takes over, onResume re-applies
                 startActivity(new android.content.Intent(EmulatorActivity.this, SettingsActivity.class));
             }
+            @Override public void onConnectAccessory(int which) {
+                if (ctx == 0) return;
+                if (which == 1) { NativeBridge.nativeConnectPrinter(ctx); printerConnected = true; }
+                else            { NativeBridge.nativeDisconnectPrinter(ctx); printerConnected = false; }
+            }
+            @Override public void onPrinterFeed() {
+                android.content.Intent i = new android.content.Intent(EmulatorActivity.this, PrinterFeedActivity.class);
+                i.putExtra(PrinterFeedActivity.EXTRA_CTX, ctx);
+                startActivity(i);
+            }
+            @Override public boolean printerConnected() { return printerConnected; }
+            @Override public boolean hasPrintouts() { return ctx != 0 && NativeBridge.nativePrinterGeneration(ctx) > 0; }
             @Override public java.io.File stateFile(int slot) {
                 return SaveStore.stateFile(EmulatorActivity.this, romName, slot);
             }
