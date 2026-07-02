@@ -261,9 +261,9 @@ Java_io_sameboy_android_NativeBridge_nativePrinterFeed(JNIEnv *env, jclass c, jl
     if (rows == 0) return (*env)->NewIntArray(env, 0);
     jsize n = (jsize)rows * 160;
     jintArray arr = (*env)->NewIntArray(env, n);
-    if (!arr) return NULL;
+    if (!arr) { (*env)->ExceptionClear(env); return NULL; }   /* OOM: clear pending exc, Java sees null */
     uint32_t *tmp = malloc((size_t)n * sizeof(uint32_t));
-    if (!tmp) return arr;
+    if (!tmp) { (*env)->DeleteLocalRef(env, arr); return NULL; }  /* avoid an all-zero (black) feed */
     sb_session_printer_feed(s, tmp, rows);
     (*env)->SetIntArrayRegion(env, arr, 0, n, (const jint *)tmp);
     free(tmp);

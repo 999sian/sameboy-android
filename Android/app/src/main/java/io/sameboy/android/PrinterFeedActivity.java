@@ -29,12 +29,27 @@ import java.io.OutputStream;
  *  Reads pixels via NativeBridge.nativePrinterFeed on the singleton session ctx. */
 public final class PrinterFeedActivity extends AppCompatActivity {
     public static final String EXTRA_CTX = "io.sameboy.ctx";
+    private static final int REQ_WRITE = 71;   // pre-29 save-to-Pictures permission
     private long ctx;
     private Bitmap bitmap;
 
+    @Override public void onRequestPermissionsResult(int req, String[] p, int[] r) {
+        super.onRequestPermissionsResult(req, p, r);
+        if (req == REQ_WRITE && r.length > 0
+                && r[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            saveToPictures();   // permission now held; retry
+        } else if (req == REQ_WRITE) {
+            Toast.makeText(this, "Save failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        // Process-death restore: the native session (raw ctx pointer) is gone and the
+        // Intent extra is stale — dereferencing it would SIGSEGV. Bail to the launcher.
+        if (b != null) { finish(); return; }
         ctx = getIntent().getLongExtra(EXTRA_CTX, 0);
+        if (ctx == 0) { finish(); return; }
         bitmap = buildBitmap();
 
         LinearLayout root = new LinearLayout(this);
@@ -102,6 +117,11 @@ public final class PrinterFeedActivity extends AppCompatActivity {
                     Toast.makeText(this, R.string.saved_to_pictures, Toast.LENGTH_SHORT).show();
                 }
             } else {
+                if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{ android.Manifest.permission.WRITE_EXTERNAL_STORAGE }, REQ_WRITE);
+                    return;   // onRequestPermissionsResult retries the save if granted
+                }
                 File dir = new File(android.os.Environment.getExternalStoragePublicDirectory(
                         android.os.Environment.DIRECTORY_PICTURES), "SameBoy");
                 dir.mkdirs();

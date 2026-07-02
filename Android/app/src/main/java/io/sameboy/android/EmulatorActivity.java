@@ -75,6 +75,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private android.os.Handler cameraHandler;
     private boolean cameraRunning = false;
     private long lastCameraWant = 0;
+    private boolean cameraDenied = false;   // latch a CAMERA denial so we don't re-prompt every poll
     private final byte[] cameraGray = new byte[128 * 112];
     private final Runnable cameraPoll = new Runnable() {
         @Override public void run() {
@@ -215,6 +216,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
 
     private void ensureCameraPermissionAndStart() {
+        if (cameraDenied) return;   // user said no this foreground; don't nag every poll
         if (checkSelfPermission(android.Manifest.permission.CAMERA)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{ android.Manifest.permission.CAMERA }, REQ_CAMERA);
@@ -226,8 +228,13 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     @Override public void onRequestPermissionsResult(int req, String[] p, int[] r) {
         super.onRequestPermissionsResult(req, p, r);
         if (req == REQ_CAMERA) {
-            if (r.length > 0 && r[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) openCamera();
-            else Toast.makeText(this, "Camera denied; using noise", Toast.LENGTH_SHORT).show();
+            if (r.length > 0 && r[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                cameraDenied = false;
+                openCamera();
+            } else {
+                cameraDenied = true;   // latch; ROM falls back to Core noise
+                Toast.makeText(this, "Camera denied; using noise", Toast.LENGTH_SHORT).show();
+            }
         }
     }
 
@@ -245,18 +252,46 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 if (f != null && f == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK) { pick = id; break; }
             }
             if (pick == null) return;   // no camera (e.g. Waydroid) → ROM keeps its noise
+            /* Pick the smallest supported YUV size that still covers the 128x112 sensor
+               (hardcoding 176x144 fails on devices that dropped sub-QVGA). deliverFrame
+               downscales whatever we get. */
+            int cw = 176, chh = 144;
+            android.hardware.camera2.params.StreamConfigurationMap map =
+                cm.getCameraCharacteristics(pick).get(
+                    android.hardware.camera2.CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            if (map != null) {
+                android.util.Size[] sizes = map.getOutputSizes(android.graphics.ImageFormat.YUV_420_888);
+                if (sizes != null && sizes.length > 0) {
+                    android.util.Size best = null;
+                    for (android.util.Size s : sizes)
+                        if (s.getWidth() >= 128 && s.getHeight() >= 112 &&
+                            (best == null || (long)s.getWidth()*s.getHeight() < (long)best.getWidth()*best.getHeight()))
+                            best = s;
+                    if (best == null)   // none big enough; take the largest offered
+                        for (android.util.Size s : sizes)
+                            if (best == null || (long)s.getWidth()*s.getHeight() > (long)best.getWidth()*best.getHeight())
+                                best = s;
+                    if (best != null) { cw = best.getWidth(); chh = best.getHeight(); }
+                }
+            }
             cameraThread = new android.os.HandlerThread("sb-cam");
             cameraThread.start();
             cameraHandler = new android.os.Handler(cameraThread.getLooper());
             cameraReader = android.media.ImageReader.newInstance(
-                    176, 144, android.graphics.ImageFormat.YUV_420_888, 2);
+                    cw, chh, android.graphics.ImageFormat.YUV_420_888, 2);
             cameraReader.setOnImageAvailableListener(reader -> {
-                android.media.Image img = reader.acquireLatestImage();
-                if (img != null) { deliverFrame(img); img.close(); }
+                try {
+                    android.media.Image img = reader.acquireLatestImage();   // may throw if closing
+                    if (img != null) { deliverFrame(img); img.close(); }
+                } catch (Exception ignored) {}   // reader closed under us on stop → ignore
             }, cameraHandler);
             cameraRunning = true;
+            /* StateCallback + session callbacks on the MAIN handler so a stop's quitSafely
+               on the camera thread can't drop them (and so device/session fields are only
+               touched on one thread). Per-frame work stays on cameraThread via the reader. */
             cm.openCamera(pick, new android.hardware.camera2.CameraDevice.StateCallback() {
                 @Override public void onOpened(android.hardware.camera2.CameraDevice d) {
+                    if (!cameraRunning) { d.close(); return; }   // stopped during the open window
                     cameraDevice = d;
                     try {
                         final android.hardware.camera2.CaptureRequest.Builder rb =
@@ -266,45 +301,58 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                             java.util.Collections.singletonList(cameraReader.getSurface()),
                             new android.hardware.camera2.CameraCaptureSession.StateCallback() {
                                 @Override public void onConfigured(android.hardware.camera2.CameraCaptureSession s) {
+                                    if (!cameraRunning) { try { s.close(); } catch (Exception ignored) {} return; }
                                     cameraSession = s;
                                     try { s.setRepeatingRequest(rb.build(), null, cameraHandler); }
                                     catch (Exception ignored) {}
                                 }
-                                @Override public void onConfigureFailed(android.hardware.camera2.CameraCaptureSession s) {}
-                            }, cameraHandler);
-                    } catch (Exception ignored) {}
+                                @Override public void onConfigureFailed(android.hardware.camera2.CameraCaptureSession s) {
+                                    stopCamera();   // main thread; frees device+thread, allows a later retry
+                                }
+                            }, handler);
+                    } catch (Exception e) { stopCamera(); }
                 }
-                @Override public void onDisconnected(android.hardware.camera2.CameraDevice d) { d.close(); cameraDevice = null; }
-                @Override public void onError(android.hardware.camera2.CameraDevice d, int e) { d.close(); cameraDevice = null; }
-            }, cameraHandler);
-        } catch (Exception e) { cameraRunning = false; }
+                @Override public void onDisconnected(android.hardware.camera2.CameraDevice d) { stopCamera(); }
+                @Override public void onError(android.hardware.camera2.CameraDevice d, int e) { stopCamera(); }
+            }, handler);
+        } catch (Exception e) { stopCamera(); }   // idempotent: frees any partial thread/reader
     }
 
-    /** Y plane → center-cropped 128x112 grayscale → native. */
+    /** Y plane → 8:7 center-crop → nearest-neighbor downscale to 128x112 grayscale → native. */
     private void deliverFrame(android.media.Image img) {
         android.media.Image.Plane y = img.getPlanes()[0];
         java.nio.ByteBuffer buf = y.getBuffer();
         int rowStride = y.getRowStride();
         int w = img.getWidth(), h = img.getHeight();
-        int cropX = Math.max(0, (w - 128) / 2);
-        int cropY = Math.max(0, (h - 112) / 2);
+        int cropW = Math.min(w, h * 128 / 112);   // largest 128:112 region that fits
+        int cropH = Math.min(h, w * 112 / 128);
+        int cropX = (w - cropW) / 2, cropY = (h - cropH) / 2;
         for (int ry = 0; ry < 112; ry++) {
-            int sy = Math.min(h - 1, cropY + ry);
+            int sy = Math.min(h - 1, cropY + ry * cropH / 112);
             for (int rx = 0; rx < 128; rx++) {
-                int sx = Math.min(w - 1, cropX + rx);
+                int sx = Math.min(w - 1, cropX + rx * cropW / 128);
                 cameraGray[ry * 128 + rx] = buf.get(sy * rowStride + sx);
             }
         }
-        if (ctx != 0) NativeBridge.nativeCameraDeliver(ctx, cameraGray);
+        long c = ctx;   // snapshot: stopCamera joins this thread before onDestroy frees ctx
+        if (c != 0) NativeBridge.nativeCameraDeliver(c, cameraGray);
     }
 
     private void stopCamera() {
         cameraRunning = false;
         try { if (cameraSession != null) cameraSession.close(); } catch (Exception ignored) {}
         try { if (cameraDevice != null) cameraDevice.close(); } catch (Exception ignored) {}
-        try { if (cameraReader != null) cameraReader.close(); } catch (Exception ignored) {}
-        cameraSession = null; cameraDevice = null; cameraReader = null;
-        if (cameraThread != null) { cameraThread.quitSafely(); cameraThread = null; cameraHandler = null; }
+        cameraSession = null; cameraDevice = null;
+        android.os.HandlerThread t = cameraThread;
+        android.media.ImageReader reader = cameraReader;
+        cameraThread = null; cameraHandler = null; cameraReader = null;
+        if (t != null) {
+            t.quitSafely();
+            try { t.join(200); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+        }
+        /* Close the reader only after the camera thread is dead, so no in-flight
+           onImageAvailable can touch it (the listener's try/catch covers the rest). */
+        if (reader != null) { try { reader.close(); } catch (Exception ignored) {} }
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
@@ -379,12 +427,12 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 else            { NativeBridge.nativeDisconnectPrinter(ctx); printerConnected = false; }
             }
             @Override public void onPrinterFeed() {
+                menuOpen = false;   // menu closing; PrinterFeedActivity takes over, onResume re-applies
                 android.content.Intent i = new android.content.Intent(EmulatorActivity.this, PrinterFeedActivity.class);
                 i.putExtra(PrinterFeedActivity.EXTRA_CTX, ctx);
                 startActivity(i);
             }
             @Override public boolean printerConnected() { return printerConnected; }
-            @Override public boolean hasPrintouts() { return ctx != 0 && NativeBridge.nativePrinterGeneration(ctx) > 0; }
             @Override public java.io.File stateFile(int slot) {
                 return SaveStore.stateFile(EmulatorActivity.this, romName, slot);
             }

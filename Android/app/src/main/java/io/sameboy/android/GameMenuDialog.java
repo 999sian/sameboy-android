@@ -28,7 +28,6 @@ final class GameMenuDialog {
         void onConnectAccessory(int which);   // 0 = None, 1 = Printer
         void onPrinterFeed();
         boolean printerConnected();
-        boolean hasPrintouts();
         void onExitGame();
         File stateFile(int slot);
         Bitmap thumbnail(int slot);
@@ -49,7 +48,7 @@ final class GameMenuDialog {
                     case 3: h.onResetGame(); break;
                     case 4: chained[0] = true; showModels(a, h); break;
                     case 5: chained[0] = true; showAccessory(a, h); break;
-                    case 6: h.onPrinterFeed(); return;   // launches feed Activity; menu dismisses, onMenuClosed unpauses
+                    case 6: chained[0] = true; h.onPrinterFeed(); return;   // feed Activity takes over; onResume re-applies (like Settings)
                     case 7: chained[0] = true; h.onOpenSettings(); return;   // leaves menu; EmulatorActivity re-applies on resume
                     case 8: h.onExitGame(); return;
                     default: break;                   // 0 = Resume: just dismiss

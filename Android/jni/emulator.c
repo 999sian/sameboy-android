@@ -26,7 +26,8 @@ struct sb_emulator {
     pthread_mutex_t camera_mtx;
     uint8_t         camera_staging[SB_CAM_W * SB_CAM_H];
     uint8_t         camera_sensor[SB_CAM_W * SB_CAM_H];
-    atomic_bool     camera_wanted;
+    atomic_bool     camera_wanted;   /* consumed by Java poll (exchange) to drive the device camera */
+    atomic_bool     camera_pending;  /* a shoot fired; drained on the emu thread next frame to clear busy */
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -185,15 +186,22 @@ static uint8_t cam_get_pixel_cb(GB_gameboy_t *gb, uint8_t x, uint8_t y)
 
 static void cam_update_request_cb(GB_gameboy_t *gb)
 {
+    /* Fires on the emu thread from GB_camera_write_register, which clears the busy bit
+       (SHOOT &= ~1) only AFTER this returns and then stores the shoot value with bit0=1.
+       Calling GB_camera_updated() here would clear the OLD (pre-store) value = a no-op,
+       latching busy forever and soft-locking the ROM. Instead pull the latest frame now
+       and flag a pending clear, drained at the next sb_emu_run_frame (after the store). */
     sb_emulator *e = GB_get_user_data(gb);
     atomic_store(&e->camera_wanted, true);
     sb_camera_promote(e);            /* pull latest delivered frame into the sensor */
-    GB_camera_updated(gb);           /* clear busy immediately (non-blocking) */
+    atomic_store(&e->camera_pending, true);
 }
 
 bool sb_emu_camera_wanted(sb_emulator *e)
 {
-    return e ? atomic_load(&e->camera_wanted) : false;
+    /* Consuming read: true only if a shoot arrived since the last poll, so when the ROM
+       stops shooting the Java poller sees false and can idle-stop the device camera. */
+    return e ? atomic_exchange(&e->camera_wanted, false) : false;
 }
 
 void sb_emu_camera_deliver(sb_emulator *e, const uint8_t *gray)
@@ -254,7 +262,16 @@ void sb_emu_set_boot_rom(sb_emulator *e, int type, const uint8_t *data, size_t l
 
 void sb_emu_reset(sb_emulator *e) { GB_reset(&e->gb); }
 
-void sb_emu_run_frame(sb_emulator *e) { GB_run_frame(&e->gb); }
+void sb_emu_run_frame(sb_emulator *e)
+{
+    GB_run_frame(&e->gb);
+    /* A shoot during this frame stored busy=1 (see cam_update_request_cb); clear it now,
+       after the store, so the ROM sees the shoot complete on the next frame (~1 frame of
+       "processing", like the real cart). Emu-thread only, so no lock needed on the GB. */
+    if (atomic_exchange(&e->camera_pending, false)) {
+        GB_camera_updated(&e->gb);
+    }
+}
 
 const uint32_t *sb_emu_front_buffer(sb_emulator *e, unsigned *w, unsigned *h)
 {
