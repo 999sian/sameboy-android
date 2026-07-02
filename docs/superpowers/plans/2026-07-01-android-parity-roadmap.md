@@ -30,6 +30,13 @@ key decisions, dependencies, and acceptance.
   theme via AppCompat DayNight (verified: Light switch live + persisted across restart,
   independent of the GB palette). Host tests + 4-ABI build green. See
   `specs/2026-07-01-android-m5-color-theme.md` and `plans/2026-07-01-android-m5-color-theme.md`.
+- **M6 (Physical input) is DONE and on-device verified** (Waydroid, x86_64) — hardware
+  gamepad (keycode + axis → GB keys, remappable, persisted; verified: injected buttons
+  drive the game, A rebound to BUTTON_X and survived restart), rumble (Core callback →
+  amplitude atomic → `Vibrator` poller; rumble-mode setting Disabled/Cartridge/All), and
+  on-screen controls auto-hide when a pad is present. Motor buzz + hide-on-connect need
+  real hardware (no gamepad/vibrator on the AVD). Host tests + 4-ABI build green. See
+  `specs/2026-07-01-android-m6-physical-input.md` and `plans/2026-07-01-android-m6-physical-input.md`.
 - Later milestones are **not yet specced**; the detail here is enough to start each one.
 
 ## Architecture recap (stable across all milestones)
@@ -58,7 +65,7 @@ Core/*.c  (unchanged; 17-file set, -DGB_INTERNAL -DGB_DISABLE_DEBUGGER)
 ```
 M1 Foundation ✅
    └─ M2 State & session ✅ ──┬─ M3 Library ✅ ── M4 Settings ✅ ── M5 Color & theme ✅
-                             └─ M6 Physical input
+                             └─ M6 Physical input ✅
    (M2 recommended before others: in-game menu is the host for most later UI)
 M7 Peripherals   — depends on M2 (menu) + M4 (settings toggles)
 M8 Link cable    — depends on M2 (menu); largest new subsystem
