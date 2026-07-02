@@ -40,4 +40,11 @@ unsigned sb_session_printer_feed(sb_session *s, uint32_t *dst, unsigned max_rows
 void     sb_session_printer_clear(sb_session *s);
 bool     sb_session_camera_wanted(sb_session *s);
 void     sb_session_camera_deliver(sb_session *s, const uint8_t *gray);
+
+enum { SB_LINK_IDLE = 0, SB_LINK_LISTENING = 1, SB_LINK_CONNECTING = 2,
+       SB_LINK_CONNECTED = 3, SB_LINK_ERROR = 4 };
+void sb_session_link_listen(sb_session *s, int port);
+void sb_session_link_connect(sb_session *s, const char *host, int port);
+void sb_session_link_disconnect(sb_session *s);
+int  sb_session_link_status(sb_session *s);
 void   sb_session_copy_frame(sb_session *s, uint32_t *dst, unsigned *w, unsigned *h);
