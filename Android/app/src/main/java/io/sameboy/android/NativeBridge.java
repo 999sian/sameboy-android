@@ -23,6 +23,8 @@ public final class NativeBridge {
     public static native void    nativeClearBatteryDirty(long ctx);
     /** [0]=width, [1]=height, then width*height ABGR pixels. null on failure. */
     public static native int[]   nativeCopyFrame(long ctx);
+    /** Returns { title, crc32Hex8Upper } for a ROM buffer, or null if not a valid ROM. */
+    public static native String[] nativeRomInfo(byte[] rom);
     public static native void nativeDestroy(long ctx);
 
     // GB_key_t indices (Core/joypad.h)

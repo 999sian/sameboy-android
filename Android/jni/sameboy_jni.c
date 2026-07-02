@@ -2,6 +2,7 @@
 #include <android/native_window_jni.h>
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "session.h"
@@ -176,6 +177,31 @@ Java_io_sameboy_android_NativeBridge_nativeCopyFrame(JNIEnv *env, jclass c, jlon
         (*env)->SetIntArrayRegion(env, arr, 2, (jsize)(w * h), (const jint *)px);
     }
     free(px);
+    return arr;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_io_sameboy_android_NativeBridge_nativeRomInfo(JNIEnv *env, jclass c, jbyteArray rom)
+{
+    (void)c;
+    if (!rom) return NULL;
+    jsize n = (*env)->GetArrayLength(env, rom);
+    jbyte *bytes = (*env)->GetByteArrayElements(env, rom, NULL);
+    if (!bytes) return NULL;
+    char title[17];
+    uint32_t crc = 0;
+    int ret = sb_rom_info((const uint8_t *)bytes, (size_t)n, title, &crc);
+    (*env)->ReleaseByteArrayElements(env, rom, bytes, JNI_ABORT);
+    if (ret != 0) return NULL;
+    char hex[9];
+    snprintf(hex, sizeof(hex), "%08X", crc);
+    jclass strClass = (*env)->FindClass(env, "java/lang/String");
+    jobjectArray arr = (*env)->NewObjectArray(env, 2, strClass, NULL);
+    if (!arr) return NULL;
+    jstring jtitle = (*env)->NewStringUTF(env, title);
+    jstring jcrc = (*env)->NewStringUTF(env, hex);
+    (*env)->SetObjectArrayElement(env, arr, 0, jtitle);
+    (*env)->SetObjectArrayElement(env, arr, 1, jcrc);
     return arr;
 }
 
