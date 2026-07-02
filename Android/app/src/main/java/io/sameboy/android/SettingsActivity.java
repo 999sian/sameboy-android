@@ -1,6 +1,6 @@
 package io.sameboy.android;
 
-import android.app.Activity;
+import androidx.appcompat.app.AppCompatActivity;
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -14,7 +14,7 @@ import android.widget.TextView;
 
 /** Hand-rolled programmatic settings screen (no XML, no AndroidX Preference).
  *  Writes SharedPreferences via Settings; EmulatorActivity applies on resume. */
-public class SettingsActivity extends Activity {
+public class SettingsActivity extends AppCompatActivity {
     private Settings s;
     private int dp(int v) { return (int) (getResources().getDisplayMetrics().density * v); }
 
@@ -44,6 +44,7 @@ public class SettingsActivity extends Activity {
             s.colorCorrection(), i -> s.setColorCorrection(i));
         sliderRow(col, "Light temperature", 0, 20, s.lightSlider(), "", v -> s.setLightSlider(v));
         enumRow(col, "Border", new String[]{ "SGB", "Never", "Always" }, s.borderMode(), i -> s.setBorderMode(i));
+        paletteRow(col);
 
         section(col, "Audio");
         sliderRow(col, "Volume", 0, 100, s.volumePct(), " %", v -> s.setVolumePct(v));
@@ -55,7 +56,38 @@ public class SettingsActivity extends Activity {
         sliderRow(col, "Button opacity", 0, 100, s.buttonOpacityPct(), " %", v -> s.setButtonOpacityPct(v));
         toggleRow(col, "Haptics", s.haptics(), v -> s.setHaptics(v));
 
+        section(col, "Appearance");
+        enumRow(col, getString(R.string.theme), new String[]{ "System", "Light", "Dark" },
+            s.themeMode(), i -> { s.setThemeMode(i); s.applyTheme(); recreate(); });
+
         setContentView(scroll);
+    }
+
+    private void paletteRow(LinearLayout col) {
+        final String[] names = { "Greyscale", "DMG", "MGB", "GBL", "Custom…" };
+        TextView row = new TextView(this);
+        row.setPadding(0, dp(10), 0, dp(10));
+        Runnable render = () -> {
+            int b = s.paletteBuiltin();
+            row.setText(getString(R.string.palette) + ":  " + (b < 0 ? "Custom" : names[b]));
+        };
+        render.run();
+        row.setOnClickListener(v -> {
+            int current = s.paletteBuiltin() < 0 ? 4 : s.paletteBuiltin();
+            new AlertDialog.Builder(this)
+                .setTitle(R.string.palette)
+                .setSingleChoiceItems(names, current, (d, which) -> {
+                    d.dismiss();
+                    if (which == 4) {
+                        PaletteEditorDialog.show(this, s, render);
+                    } else {
+                        s.setPaletteBuiltin(which);
+                        render.run();
+                    }
+                })
+                .show();
+        });
+        col.addView(row);
     }
 
     private interface IntSink { void set(int v); }
