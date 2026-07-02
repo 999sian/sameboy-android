@@ -32,4 +32,5 @@ void   sb_session_switch_model(sb_session *s, int model);
 void   sb_session_apply_settings(sb_session *s, const sb_settings *cfg); /* self-parks */
 void   sb_session_set_palette(sb_session *s, int builtin_index, const uint32_t rgb[4]); /* self-parks */
 void   sb_session_set_volume(sb_session *s, int volume_256);            /* atomic, any thread */
+int    sb_session_rumble_amplitude(sb_session *s);                     /* any thread */
 void   sb_session_copy_frame(sb_session *s, uint32_t *dst, unsigned *w, unsigned *h);

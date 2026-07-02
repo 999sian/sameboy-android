@@ -208,7 +208,7 @@ Java_io_sameboy_android_NativeBridge_nativeRomInfo(JNIEnv *env, jclass c, jbyteA
 JNIEXPORT void JNICALL
 Java_io_sameboy_android_NativeBridge_nativeApplySettings(JNIEnv *env, jclass c, jlong ctx,
         jint colorCorrection, jdouble lightTemp, jint border, jint highpass, jint rtcMode,
-        jdouble rewindSeconds, jdouble turboCap, jdouble interference)
+        jdouble rewindSeconds, jdouble turboCap, jdouble interference, jint rumbleMode)
 {
     (void)env; (void)c;
     /* clamp enum ints to their Core ranges (Core asserts are compiled out under NDEBUG) */
@@ -216,10 +216,12 @@ Java_io_sameboy_android_NativeBridge_nativeApplySettings(JNIEnv *env, jclass c, 
     if (border < 0 || border > 2) border = 0;
     if (highpass < 0 || highpass > 2) highpass = 1;
     if (rtcMode < 0 || rtcMode > 1) rtcMode = 0;
+    if (rumbleMode < 0 || rumbleMode > 2) rumbleMode = 1;
     sb_settings s = {
         .color_correction = colorCorrection, .light_temperature = lightTemp,
         .border_mode = border, .highpass = highpass, .rtc_mode = rtcMode,
         .rewind_seconds = rewindSeconds, .turbo_cap = turboCap, .interference = interference,
+        .rumble_mode = rumbleMode,
     };
     sb_session_apply_settings((sb_session *)(uintptr_t)ctx, &s);
 }
@@ -237,6 +239,10 @@ Java_io_sameboy_android_NativeBridge_nativeSetPalette(JNIEnv *env, jclass c, jlo
     sb_session_set_palette((sb_session *)(uintptr_t)ctx, builtinIndex,
                            builtinIndex >= 0 ? NULL : rgb);
 }
+
+JNIEXPORT jint JNICALL
+Java_io_sameboy_android_NativeBridge_nativeRumbleAmplitude(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; return sb_session_rumble_amplitude((sb_session *)(uintptr_t)ctx); }
 
 JNIEXPORT void JNICALL
 Java_io_sameboy_android_NativeBridge_nativeDestroy(JNIEnv *env, jclass c, jlong ctx)

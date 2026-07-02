@@ -119,6 +119,10 @@ int main(void)
     sb_session_set_palette(s, -1, pal);          /* custom blue */
     usleep(30 * 1000);
 
+    /* rumble amplitude readable mid-run (0..255) */
+    int ramp = sb_session_rumble_amplitude(s);
+    assert(ramp >= 0 && ramp <= 255);
+
     sb_session_stop(s);
     sb_session_destroy(s);
     free(rom);

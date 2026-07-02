@@ -214,6 +214,11 @@ void sb_session_set_volume(sb_session *s, int volume_256)
     atomic_store(&s->volume, volume_256);
 }
 
+int sb_session_rumble_amplitude(sb_session *s)
+{
+    return s ? sb_emu_rumble_amplitude(s->emu) : 0;
+}
+
 void sb_session_copy_frame(sb_session *s, uint32_t *dst, unsigned *w, unsigned *h)
 {
     if (!s) { *w = *h = 0; return; }

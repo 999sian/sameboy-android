@@ -83,6 +83,8 @@ final class Settings {
     }
     /** On-screen control alpha 0..1. */
     float buttonOpacity() { return buttonOpacityPct() / 100f; }
+    /** TEMPORARY: Task 3 replaces this with the real pref accessor. */
+    int rumbleMode() { return 1; }
 
     /** Push every Core-backed setting + volume to a running session. */
     void apply(long ctx) {
@@ -95,7 +97,8 @@ final class Settings {
             rtcMode(),
             rewindSeconds(),
             turboCapQuarters() / 4.0,
-            interferencePct() / 100.0);
+            interferencePct() / 100.0,
+            rumbleMode());
         NativeBridge.nativeSetVolume(ctx, volumePct() * 256 / 100);
         int builtin = paletteBuiltin();
         NativeBridge.nativeSetPalette(ctx, builtin,
