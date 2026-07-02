@@ -49,7 +49,7 @@ final class RomScanner {
     /** Handle one document: add if it is (or contains) a valid GB/GBC ROM. */
     static void handleFile(ContentResolver cr, Uri docUri, String name, Sink sink) {
         if (name == null) return;
-        String lower = name.toLowerCase();
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
         if (lower.endsWith(".gb") || lower.endsWith(".gbc")) {
             addRom(sink, readAll(cr, docUri), docUri.toString(), null, name);
         } else if (lower.endsWith(".zip")) {

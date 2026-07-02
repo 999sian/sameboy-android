@@ -10,7 +10,7 @@ final class ZipRoms {
     private ZipRoms() {}
 
     static boolean isRomName(String name) {
-        String n = name.toLowerCase();
+        String n = name.toLowerCase(java.util.Locale.ROOT);
         return n.endsWith(".gb") || n.endsWith(".gbc");
     }
 

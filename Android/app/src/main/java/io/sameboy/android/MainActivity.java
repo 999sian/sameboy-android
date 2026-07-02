@@ -74,7 +74,11 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
-    @Override protected void onResume() { super.onResume(); refresh(); }
+    @Override protected void onResume() {
+        super.onResume();
+        library.load();   // pick up a background scan's save / another instance's changes
+        refresh();
+    }
 
     private void refresh() {
         adapter.items.clear();
@@ -118,8 +122,8 @@ public class MainActivity extends Activity {
                 });
             });
         } else { // REQ_FILE
-            String name = queryName(uri);
             io.execute(() -> {
+                String name = queryName(uri);   // SAF query off the main thread (ANR-safe)
                 boolean[] got = {false};
                 RomScanner.handleFile(getContentResolver(), uri, name, entry -> {
                     got[0] = true;

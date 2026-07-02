@@ -204,6 +204,11 @@ void sb_emu_clear_battery_dirty(sb_emulator *e)
 
 int sb_rom_info(const uint8_t *rom, size_t len, char *title, uint32_t *crc32)
 {
+    /* NOTE: GB_init/GB_reset touch Core's file-static GB_random seed (Core/random.c),
+       which is not atomic. Callers run this on a background scan thread; if a game is
+       launched mid-scan, a live emulator thread using GB_random (camera/SGB) technically
+       races the seed. Effect is cosmetic (RAM/noise randomization), never a crash, and
+       Core is unmodifiable here — documented, out of scope (see M3 review). */
     if (len < 0x150) return -1;
     /* GB_gameboy_t is large and embedded by value elsewhere; heap-allocate it
        rather than risk a worker-thread stack. */
