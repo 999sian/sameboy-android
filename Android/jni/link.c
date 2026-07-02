@@ -149,3 +149,55 @@ sb_transport *sb_transport_tcp_connect(const char *host, int port) {
     freeaddrinfo(res);
     return tcp_wrap(fd);
 }
+
+/* ---------- sb_link: byte-level master/slave serial bridge ---------- */
+#define SB_LINK_TIMEOUT_MS 1500   /* per-byte master wait; peer gone → 0xFF, no hang */
+
+struct sb_link {
+    sb_transport *t;
+    uint8_t in_byte;   /* peer byte for the current master transfer */
+    int     bits;      /* master bit_end index 0..7; 0 = start of a fresh byte */
+};
+
+sb_link *sb_link_create(sb_transport *t) {
+    sb_link *s = calloc(1, sizeof(*s));
+    if (!s) { if (t) t->close(t); return NULL; }
+    s->t = t;
+    return s;
+}
+void sb_link_destroy(sb_link *s) {
+    if (!s) return;
+    if (s->t) s->t->close(s->t);
+    free(s);
+}
+
+/* master: fired per bit. On the first bit of a byte (bits==0) SB holds the whole outgoing
+   byte — exchange it now and stash the peer byte for the 8 bit_end reads. */
+void sb_link_bit_start(sb_link *s, GB_gameboy_t *gb, bool bit) {
+    (void)bit;
+    if (!s || s->bits != 0) return;
+    uint8_t out = GB_safe_read_memory(gb, 0xFF01);   /* SB */
+    if (!s->t->send(s->t, out) || !s->t->recv(s->t, &s->in_byte, SB_LINK_TIMEOUT_MS)) {
+        s->in_byte = 0xFF;   /* peer gone / timeout: link idle-high */
+    }
+}
+/* master: return the peer byte MSB-first over 8 calls; wraps bits back to 0 after the 8th. */
+bool sb_link_bit_end(sb_link *s, GB_gameboy_t *gb) {
+    (void)gb;
+    if (!s) return true;
+    bool r = (s->in_byte >> (7 - s->bits)) & 1;
+    s->bits = (s->bits + 1) & 7;
+    return r;
+}
+/* slave: per-frame on the emu thread. If externally clocked and a master byte is waiting,
+   send our SB back and clock the 8 bits in (MSB-first). */
+void sb_link_slave_poll(sb_link *s, GB_gameboy_t *gb) {
+    if (!s) return;
+    uint8_t sc = GB_safe_read_memory(gb, 0xFF02);
+    if ((sc & 0x81) != 0x80) return;                 /* not armed as slave */
+    uint8_t m;
+    if (!s->t->recv(s->t, &m, 0)) return;            /* non-blocking; nothing yet */
+    uint8_t out = GB_safe_read_memory(gb, 0xFF01);   /* our outgoing byte, before clocking */
+    s->t->send(s->t, out);
+    for (int i = 0; i < 8; i++) GB_serial_set_data_bit(gb, (m >> (7 - i)) & 1);
+}
