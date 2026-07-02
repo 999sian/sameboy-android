@@ -10,6 +10,8 @@ key decisions, dependencies, and acceptance.
 
 - **M1 (Foundation) is DONE and on-device verified** (Waydroid, x86_64). See
   `specs/2026-07-01-android-frontend-design.md` and `plans/2026-07-01-android-frontend-m1.md`.
+- **M2 (State & session) is DONE and on-device verified** (Waydroid, x86_64). See
+  `specs/2026-07-01-android-m2-state-session.md` and `plans/2026-07-01-android-m2-state-session.md`.
 - Later milestones are **not yet specced**; the detail here is enough to start each one.
 
 ## Architecture recap (stable across all milestones)
@@ -37,8 +39,8 @@ Core/*.c  (unchanged; 17-file set, -DGB_INTERNAL -DGB_DISABLE_DEBUGGER)
 
 ```
 M1 Foundation ✅
-   └─ M2 State & session ──┬─ M3 Library ── M4 Settings ── M5 Color & theme
-                           └─ M6 Physical input
+   └─ M2 State & session ✅ ──┬─ M3 Library ── M4 Settings ── M5 Color & theme
+                             └─ M6 Physical input
    (M2 recommended before others: in-game menu is the host for most later UI)
 M7 Peripherals   — depends on M2 (menu) + M4 (settings toggles)
 M8 Link cable    — depends on M2 (menu); largest new subsystem
