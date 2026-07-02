@@ -28,6 +28,7 @@ public final class NativeBridge {
     public static native void nativeApplySettings(long ctx, int colorCorrection, double lightTemp,
             int border, int highpass, int rtcMode, double rewindSeconds, double turboCap, double interference);
     public static native void nativeSetVolume(long ctx, int volume256);
+    public static native void nativeSetPalette(long ctx, int builtinIndex, int c0, int c1, int c2, int c3);
     public static native void nativeDestroy(long ctx);
 
     // GB_key_t indices (Core/joypad.h)

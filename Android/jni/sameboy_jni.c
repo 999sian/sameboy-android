@@ -229,5 +229,15 @@ Java_io_sameboy_android_NativeBridge_nativeSetVolume(JNIEnv *env, jclass c, jlon
 { (void)env; (void)c; sb_session_set_volume((sb_session *)(uintptr_t)ctx, volume256); }
 
 JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSetPalette(JNIEnv *env, jclass c, jlong ctx,
+        jint builtinIndex, jint c0, jint c1, jint c2, jint c3)
+{
+    (void)env; (void)c;
+    uint32_t rgb[4] = { (uint32_t)c0, (uint32_t)c1, (uint32_t)c2, (uint32_t)c3 };
+    sb_session_set_palette((sb_session *)(uintptr_t)ctx, builtinIndex,
+                           builtinIndex >= 0 ? NULL : rgb);
+}
+
+JNIEXPORT void JNICALL
 Java_io_sameboy_android_NativeBridge_nativeDestroy(JNIEnv *env, jclass c, jlong ctx)
 { (void)env; (void)c; sb_session_destroy((sb_session *)(uintptr_t)ctx); }
