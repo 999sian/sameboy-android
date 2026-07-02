@@ -55,6 +55,14 @@ public class SettingsActivity extends AppCompatActivity {
         section(col, "Controls");
         sliderRow(col, "Button opacity", 0, 100, s.buttonOpacityPct(), " %", v -> s.setButtonOpacityPct(v));
         toggleRow(col, "Haptics", s.haptics(), v -> s.setHaptics(v));
+        enumRow(col, getString(R.string.rumble),
+            new String[]{ "Disabled", "Cartridge only", "All games" },
+            s.rumbleMode(), i -> s.setRumbleMode(i));
+        TextView gp = new TextView(this);
+        gp.setText(getString(R.string.gamepad_buttons));
+        gp.setPadding(0, dp(10), 0, dp(10));
+        gp.setOnClickListener(v -> startActivity(new android.content.Intent(this, GamepadRemapActivity.class)));
+        col.addView(gp);
 
         section(col, "Appearance");
         enumRow(col, getString(R.string.theme), new String[]{ "System", "Light", "Dark" },
