@@ -16,6 +16,8 @@ import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
 
 public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Listener {
+    public static final String EXTRA_ZIP_ENTRY = "io.sameboy.zipEntry";
+    public static final String EXTRA_ROM_KEY = "io.sameboy.romKey";
     private long ctx = 0;
     private File savFile;
     private String romName = "rom";

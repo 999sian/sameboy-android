@@ -1,4 +1,14 @@
 <resources>
     <string name="app_name">SameBoy</string>
     <string name="open_rom">Open ROM</string>
+    <string name="import_folder">Import Folder</string>
+    <string name="library_empty">No games yet. Import a folder or open a ROM.</string>
+    <string name="scanning">Scanning…</string>
+    <string name="added_n">Added %d game(s)</string>
+    <string name="not_a_rom">Not a Game Boy ROM</string>
+    <string name="never">Never played</string>
+    <string name="play">Play</string>
+    <string name="favorite">Favorite</string>
+    <string name="unfavorite">Unfavorite</string>
+    <string name="remove">Remove</string>
 </resources>
