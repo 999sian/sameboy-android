@@ -206,5 +206,28 @@ Java_io_sameboy_android_NativeBridge_nativeRomInfo(JNIEnv *env, jclass c, jbyteA
 }
 
 JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeApplySettings(JNIEnv *env, jclass c, jlong ctx,
+        jint colorCorrection, jdouble lightTemp, jint border, jint highpass, jint rtcMode,
+        jdouble rewindSeconds, jdouble turboCap, jdouble interference)
+{
+    (void)env; (void)c;
+    /* clamp enum ints to their Core ranges (Core asserts are compiled out under NDEBUG) */
+    if (colorCorrection < 0 || colorCorrection > 6) colorCorrection = 2;
+    if (border < 0 || border > 2) border = 0;
+    if (highpass < 0 || highpass > 2) highpass = 1;
+    if (rtcMode < 0 || rtcMode > 1) rtcMode = 0;
+    sb_settings s = {
+        .color_correction = colorCorrection, .light_temperature = lightTemp,
+        .border_mode = border, .highpass = highpass, .rtc_mode = rtcMode,
+        .rewind_seconds = rewindSeconds, .turbo_cap = turboCap, .interference = interference,
+    };
+    sb_session_apply_settings((sb_session *)(uintptr_t)ctx, &s);
+}
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSetVolume(JNIEnv *env, jclass c, jlong ctx, jint volume256)
+{ (void)env; (void)c; sb_session_set_volume((sb_session *)(uintptr_t)ctx, volume256); }
+
+JNIEXPORT void JNICALL
 Java_io_sameboy_android_NativeBridge_nativeDestroy(JNIEnv *env, jclass c, jlong ctx)
 { (void)env; (void)c; sb_session_destroy((sb_session *)(uintptr_t)ctx); }

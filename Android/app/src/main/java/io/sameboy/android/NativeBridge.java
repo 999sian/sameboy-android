@@ -25,6 +25,9 @@ public final class NativeBridge {
     public static native int[]   nativeCopyFrame(long ctx);
     /** Returns { title, crc32Hex8Upper } for a ROM buffer, or null if not a valid ROM. */
     public static native String[] nativeRomInfo(byte[] rom);
+    public static native void nativeApplySettings(long ctx, int colorCorrection, double lightTemp,
+            int border, int highpass, int rtcMode, double rewindSeconds, double turboCap, double interference);
+    public static native void nativeSetVolume(long ctx, int volume256);
     public static native void nativeDestroy(long ctx);
 
     // GB_key_t indices (Core/joypad.h)
