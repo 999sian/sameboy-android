@@ -26,4 +26,10 @@
     <string name="connect_accessory">Connect accessory</string>
     <string name="accessory_none">None</string>
     <string name="accessory_printer">Game Boy Printer</string>
+    <string name="link_cable">Link cable</string>
+    <string name="link_host">Host</string>
+    <string name="link_join">Join</string>
+    <string name="link_disconnect">Disconnect</string>
+    <string name="link_hint_join">Peer IP (e.g. 192.168.1.5)</string>
+    <string name="accessory_link">Link cable</string>
 </resources>

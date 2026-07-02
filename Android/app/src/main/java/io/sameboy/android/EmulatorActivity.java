@@ -432,6 +432,12 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 i.putExtra(PrinterFeedActivity.EXTRA_CTX, ctx);
                 startActivity(i);
             }
+            @Override public void onLinkCable() {
+                menuOpen = false;   // LinkActivity takes over; onResume re-applies
+                android.content.Intent i = new android.content.Intent(EmulatorActivity.this, LinkActivity.class);
+                i.putExtra(LinkActivity.EXTRA_CTX, ctx);
+                startActivity(i);
+            }
             @Override public boolean printerConnected() { return printerConnected; }
             @Override public java.io.File stateFile(int slot) {
                 return SaveStore.stateFile(EmulatorActivity.this, romName, slot);

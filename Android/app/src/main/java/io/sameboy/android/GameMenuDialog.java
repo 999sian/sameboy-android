@@ -27,6 +27,7 @@ final class GameMenuDialog {
         void onOpenSettings();
         void onConnectAccessory(int which);   // 0 = None, 1 = Printer
         void onPrinterFeed();
+        void onLinkCable();
         boolean printerConnected();
         void onExitGame();
         File stateFile(int slot);
@@ -37,7 +38,8 @@ final class GameMenuDialog {
 
     static void show(Activity a, Host h) {
         final String[] items = { "Resume", "Save state", "Load state", "Reset", "Model",
-                                 "Connect accessory", "Printer feed", "Settings", "Exit" };
+                                 "Connect accessory", "Printer feed", "Link cable",
+                                 "Settings", "Exit" };
         final boolean[] chained = { false };   // a submenu took over; don't unpause yet
         AlertDialog dlg = new AlertDialog.Builder(a)
             .setTitle("SameBoy")
@@ -49,8 +51,9 @@ final class GameMenuDialog {
                     case 4: chained[0] = true; showModels(a, h); break;
                     case 5: chained[0] = true; showAccessory(a, h); break;
                     case 6: chained[0] = true; h.onPrinterFeed(); return;   // feed Activity takes over; onResume re-applies (like Settings)
-                    case 7: chained[0] = true; h.onOpenSettings(); return;   // leaves menu; EmulatorActivity re-applies on resume
-                    case 8: h.onExitGame(); return;
+                    case 7: chained[0] = true; h.onLinkCable(); return;   // LinkActivity takes over; onResume re-applies
+                    case 8: chained[0] = true; h.onOpenSettings(); return;   // leaves menu; EmulatorActivity re-applies on resume
+                    case 9: h.onExitGame(); return;
                     default: break;                   // 0 = Resume: just dismiss
                 }
             })
