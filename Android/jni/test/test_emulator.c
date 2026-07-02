@@ -309,6 +309,26 @@ static void test_printer(void)
     free(buf);
 }
 
+static void test_camera(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
+    sb_emulator *e = sb_emu_create(0x002, rom, rlen, NULL, 0);
+    assert(e);
+    assert(!sb_emu_camera_wanted(e));                 /* nothing requested yet */
+    uint8_t frame[SB_CAM_W * SB_CAM_H];
+    for (int y = 0; y < SB_CAM_H; y++)
+        for (int x = 0; x < SB_CAM_W; x++) frame[y * SB_CAM_W + x] = (uint8_t)(x ^ y);
+    sb_emu_camera_deliver(e, frame);                  /* → staging (no crash) */
+    sb_camera_promote(e);                             /* staging → sensor (no crash) */
+    /* pure clamp helper: exact fetch + out-of-range/negative clamp */
+    assert(sb_camera_read(frame, 10, 20) == (uint8_t)(10 ^ 20));
+    assert(sb_camera_read(frame, 200, 20) == sb_camera_read(frame, 127, 20)); /* x clamp */
+    assert(sb_camera_read(frame, 10, 200) == sb_camera_read(frame, 10, 111)); /* y clamp */
+    assert(sb_camera_read(frame, -5, -5) == frame[0]);                        /* neg clamp */
+    sb_emu_destroy(e);
+    free(rom);
+}
+
 static void test_rumble(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -381,6 +401,7 @@ int main(void)
     test_palette();
     test_rumble();
     test_printer();
+    test_camera();
     printf("emulator: all tests passed\n");
     return 0;
 }

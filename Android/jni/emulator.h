@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "ring_buffer.h"
 #include <stdatomic.h>
 
@@ -73,5 +74,14 @@ void     sb_emu_printer_clear(sb_emulator *e);
    top/bottom margin rows white (0xFFFFFFFF) and copy `height` rows from `image`. */
 void     sb_printer_append(uint32_t **buf, unsigned *rows, const uint32_t *image,
                            unsigned height, unsigned top, unsigned bottom);
+
+/* --- Game Boy Camera (M7) --- 128x112 grayscale sensor window */
+#define SB_CAM_W 128
+#define SB_CAM_H 112
+bool    sb_emu_camera_wanted(sb_emulator *e);                 /* atomic read */
+void    sb_emu_camera_deliver(sb_emulator *e, const uint8_t *gray);   /* SB_CAM_W*SB_CAM_H bytes → staging */
+/* testable helpers */
+void    sb_camera_promote(sb_emulator *e);                    /* staging → sensor under lock */
+uint8_t sb_camera_read(const uint8_t *buf, int x, int y);     /* clamp x∈[0,127] y∈[0,111] */
 
 #define SB_AUDIO_SAMPLE_RATE 48000

@@ -23,6 +23,10 @@ struct sb_emulator {
     uint32_t       *printer_feed;        /* 160 * printer_rows ARGB, malloc/realloc */
     unsigned        printer_rows;
     atomic_uint     printer_generation;
+    pthread_mutex_t camera_mtx;
+    uint8_t         camera_staging[SB_CAM_W * SB_CAM_H];
+    uint8_t         camera_sensor[SB_CAM_W * SB_CAM_H];
+    atomic_bool     camera_wanted;
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -159,6 +163,47 @@ void sb_emu_printer_clear(sb_emulator *e)
     pthread_mutex_unlock(&e->printer_mtx);
 }
 
+uint8_t sb_camera_read(const uint8_t *buf, int x, int y)
+{
+    if (x < 0) x = 0; else if (x >= SB_CAM_W) x = SB_CAM_W - 1;
+    if (y < 0) y = 0; else if (y >= SB_CAM_H) y = SB_CAM_H - 1;
+    return buf[y * SB_CAM_W + x];
+}
+
+void sb_camera_promote(sb_emulator *e)
+{
+    pthread_mutex_lock(&e->camera_mtx);
+    memcpy(e->camera_sensor, e->camera_staging, sizeof(e->camera_sensor));
+    pthread_mutex_unlock(&e->camera_mtx);
+}
+
+static uint8_t cam_get_pixel_cb(GB_gameboy_t *gb, uint8_t x, uint8_t y)
+{
+    sb_emulator *e = GB_get_user_data(gb);
+    return sb_camera_read(e->camera_sensor, x, y);   /* emu thread; sensor only written here-thread */
+}
+
+static void cam_update_request_cb(GB_gameboy_t *gb)
+{
+    sb_emulator *e = GB_get_user_data(gb);
+    atomic_store(&e->camera_wanted, true);
+    sb_camera_promote(e);            /* pull latest delivered frame into the sensor */
+    GB_camera_updated(gb);           /* clear busy immediately (non-blocking) */
+}
+
+bool sb_emu_camera_wanted(sb_emulator *e)
+{
+    return e ? atomic_load(&e->camera_wanted) : false;
+}
+
+void sb_emu_camera_deliver(sb_emulator *e, const uint8_t *gray)
+{
+    if (!e || !gray) return;
+    pthread_mutex_lock(&e->camera_mtx);
+    memcpy(e->camera_staging, gray, sizeof(e->camera_staging));
+    pthread_mutex_unlock(&e->camera_mtx);
+}
+
 sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
                            const uint8_t *sav, size_t sav_len)
 {
@@ -183,6 +228,9 @@ sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
     GB_set_sample_rate(&e->gb, SB_AUDIO_SAMPLE_RATE);
     GB_apu_set_sample_callback(&e->gb, audio_cb);
     GB_set_rumble_callback(&e->gb, rumble_cb);
+    pthread_mutex_init(&e->camera_mtx, NULL);
+    GB_set_camera_get_pixel_callback(&e->gb, cam_get_pixel_cb);
+    GB_set_camera_update_request_callback(&e->gb, cam_update_request_cb);
 
     GB_load_rom_from_buffer(&e->gb, rom, rom_len);
     if (sav && sav_len) GB_load_battery_from_buffer(&e->gb, sav, sav_len);
@@ -377,6 +425,7 @@ void sb_emu_destroy(sb_emulator *e)
     for (int i = 0; i < SB_BOOT_ROM_COUNT; i++) free(e->boot[i].data);
     free(e->printer_feed);
     pthread_mutex_destroy(&e->printer_mtx);
+    pthread_mutex_destroy(&e->camera_mtx);
     pthread_mutex_destroy(&e->fb_mtx);
     free(e);
 }
