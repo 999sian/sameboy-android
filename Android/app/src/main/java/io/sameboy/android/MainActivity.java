@@ -52,6 +52,10 @@ public class MainActivity extends Activity {
         openFile.setOnClickListener(v -> pickFile());
         bar.addView(importFolder);
         bar.addView(openFile);
+        Button settings = new Button(this);
+        settings.setText(R.string.settings);
+        settings.setOnClickListener(v -> startActivity(new android.content.Intent(this, SettingsActivity.class)));
+        bar.addView(settings);
         root.addView(bar);
 
         empty = new TextView(this);

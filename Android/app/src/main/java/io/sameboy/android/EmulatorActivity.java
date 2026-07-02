@@ -25,6 +25,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private File savFile;
     private String romName = "rom";
     private boolean menuOpen = false;
+    private Settings settings;
+    private TouchOverlayView overlay;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Runnable batteryPoll = new Runnable() {
@@ -54,6 +56,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         // Save key: CRC for library launches, display-name for external one-shot opens (M2 behavior).
         romName = (keyExtra != null && !keyExtra.isEmpty()) ? keyExtra : displayName(data);
         savFile = SaveStore.savFile(this, romName);
+        settings = new Settings(this);
 
         // Read the ROM off the main thread (SAF read can ANR on slow providers).
         io.execute(() -> {
@@ -72,17 +75,17 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             finish();
             return;
         }
-        // Model auto: CGB_E plays both DMG and CGB well.
-        ctx = NativeBridge.nativeCreate(NativeBridge.MODEL_CGB_E, rom, sav, getAssets());
+        ctx = NativeBridge.nativeCreate(settings.modelForLaunch(), rom, sav, getAssets());
         if (ctx == 0) {
             Toast.makeText(this, "Could not load ROM", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
 
+        settings.apply(ctx);    // batch Core settings + volume before threads start
         FrameLayout root = new FrameLayout(this);
         EmulatorSurfaceView surface = new EmulatorSurfaceView(this, this);
-        TouchOverlayView overlay = new TouchOverlayView(this, new TouchOverlayView.ControlListener() {
+        overlay = new TouchOverlayView(this, new TouchOverlayView.ControlListener() {
             @Override public void onKey(int k, boolean pressed) {
                 if (ctx != 0) NativeBridge.nativeSetKey(ctx, k, pressed);
             }
@@ -98,6 +101,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 }
             }
         });
+        overlay.setOpacity(settings.buttonOpacity());
+        overlay.setHaptics(settings.haptics());
         root.addView(surface);
         root.addView(overlay);
         setContentView(root);
@@ -131,7 +136,11 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
     @Override protected void onResume() {
         super.onResume();
-        if (ctx != 0 && !menuOpen) NativeBridge.nativePause(ctx, false);
+        if (ctx != 0 && !menuOpen) {
+            settings.apply(ctx);                       // self-parks once; picks up Settings changes
+            if (overlay != null) { overlay.setOpacity(settings.buttonOpacity()); overlay.setHaptics(settings.haptics()); }
+            NativeBridge.nativePause(ctx, false);
+        }
         handler.postDelayed(batteryPoll, 2000);
     }
 
@@ -148,6 +157,10 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             @Override public void onResetGame() { if (ctx != 0) NativeBridge.nativeReset(ctx); }
             @Override public void onSwitchModel(int model) { if (ctx != 0) NativeBridge.nativeSwitchModel(ctx, model); }
             @Override public void onExitGame() { finish(); }
+            @Override public void onOpenSettings() {
+                menuOpen = false;   // menu is closing; SettingsActivity takes over, onResume re-applies
+                startActivity(new android.content.Intent(EmulatorActivity.this, SettingsActivity.class));
+            }
             @Override public java.io.File stateFile(int slot) {
                 return SaveStore.stateFile(EmulatorActivity.this, romName, slot);
             }
