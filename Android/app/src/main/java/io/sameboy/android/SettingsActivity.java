@@ -58,7 +58,10 @@ public class SettingsActivity extends AppCompatActivity {
 
         section(col, "Appearance");
         enumRow(col, getString(R.string.theme), new String[]{ "System", "Light", "Dark" },
-            s.themeMode(), i -> { s.setThemeMode(i); s.applyTheme(); recreate(); });
+            s.themeMode(), i -> {
+                if (i == s.themeMode()) return;   // no-op reselect: avoid a pointless recreate flicker
+                s.setThemeMode(i); s.applyTheme(); recreate();
+            });
 
         setContentView(scroll);
     }
@@ -69,11 +72,12 @@ public class SettingsActivity extends AppCompatActivity {
         row.setPadding(0, dp(10), 0, dp(10));
         Runnable render = () -> {
             int b = s.paletteBuiltin();
-            row.setText(getString(R.string.palette) + ":  " + (b < 0 ? "Custom" : names[b]));
+            row.setText(getString(R.string.palette) + ":  " + (b < 0 || b > 3 ? "Custom" : names[b]));
         };
         render.run();
         row.setOnClickListener(v -> {
-            int current = s.paletteBuiltin() < 0 ? 4 : s.paletteBuiltin();
+            int b = s.paletteBuiltin();
+            int current = (b >= 0 && b <= 3) ? b : 4;   // clamp corrupt pref to the Custom slot
             new AlertDialog.Builder(this)
                 .setTitle(R.string.palette)
                 .setSingleChoiceItems(names, current, (d, which) -> {
