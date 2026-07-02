@@ -7,6 +7,7 @@ import android.view.Surface;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+import android.widget.TextView;
 import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,6 +15,8 @@ import android.os.Looper;
 import java.io.File;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Listener {
     public static final String EXTRA_ZIP_ENTRY = "io.sameboy.zipEntry";
@@ -23,6 +26,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private String romName = "rom";
     private boolean menuOpen = false;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Runnable batteryPoll = new Runnable() {
         @Override public void run() {
             if (ctx != 0 && !menuOpen && NativeBridge.nativeIsBatteryDirty(ctx)) {
@@ -39,7 +43,28 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         super.onCreate(b);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        byte[] rom = readAll(getIntent().getData());
+        TextView loading = new TextView(this);
+        loading.setText("Loading…");
+        loading.setGravity(android.view.Gravity.CENTER);
+        setContentView(loading);
+
+        Uri data = getIntent().getData();
+        String zipEntry = getIntent().getStringExtra(EXTRA_ZIP_ENTRY);
+        String keyExtra = getIntent().getStringExtra(EXTRA_ROM_KEY);
+        // Save key: CRC for library launches, display-name for external one-shot opens (M2 behavior).
+        romName = (keyExtra != null && !keyExtra.isEmpty()) ? keyExtra : displayName(data);
+        savFile = SaveStore.savFile(this, romName);
+
+        // Read the ROM off the main thread (SAF read can ANR on slow providers).
+        io.execute(() -> {
+            byte[] rom = readRom(data, zipEntry);
+            byte[] sav = SaveStore.read(savFile);
+            runOnUiThread(() -> finishSetup(rom, sav));
+        });
+    }
+
+    private void finishSetup(byte[] rom, byte[] sav) {
+        if (isFinishing() || isDestroyed()) return;
         // Native layer assumes a real ROM; reject null/empty and files smaller
         // than a GB cartridge header + entry point (0x150 bytes).
         if (rom == null || rom.length < 0x150) {
@@ -47,11 +72,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             finish();
             return;
         }
-        romName = displayName(getIntent().getData());
-        savFile = SaveStore.savFile(this, romName);
-        byte[] sav = SaveStore.read(savFile);
-
-        // Model auto: CGB_E plays both DMG and CGB well for M1.
+        // Model auto: CGB_E plays both DMG and CGB well.
         ctx = NativeBridge.nativeCreate(NativeBridge.MODEL_CGB_E, rom, sav, getAssets());
         if (ctx == 0) {
             Toast.makeText(this, "Could not load ROM", Toast.LENGTH_LONG).show();
@@ -80,6 +101,16 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         root.addView(surface);
         root.addView(overlay);
         setContentView(root);
+    }
+
+    private byte[] readRom(Uri uri, String zipEntry) {
+        if (uri == null) return null;
+        if (zipEntry != null) {
+            try (InputStream in = getContentResolver().openInputStream(uri)) {
+                return ZipRoms.extract(in, zipEntry);
+            } catch (Exception e) { return null; }
+        }
+        return readAll(uri);
     }
 
     @Override public void onSurfaceReady(Surface s) {
