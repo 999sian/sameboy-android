@@ -112,6 +112,13 @@ int main(void)
     usleep(50 * 1000);
     sb_session_set_volume(s, 256);
 
+    /* set palette mid-run (self-park): a built-in then a custom */
+    sb_session_set_palette(s, 2, NULL);          /* MGB */
+    usleep(30 * 1000);
+    uint32_t pal[4] = { 0x0000FF, 0x0000AA, 0x000055, 0x000000 };
+    sb_session_set_palette(s, -1, pal);          /* custom blue */
+    usleep(30 * 1000);
+
     sb_session_stop(s);
     sb_session_destroy(s);
     free(rom);

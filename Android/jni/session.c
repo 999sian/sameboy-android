@@ -198,6 +198,14 @@ void sb_session_apply_settings(sb_session *s, const sb_settings *cfg)
     park_end(s, was);
 }
 
+void sb_session_set_palette(sb_session *s, int builtin_index, const uint32_t rgb[4])
+{
+    if (!s) return;
+    int was = park_begin(s);
+    sb_emu_set_palette(s->emu, builtin_index, rgb);
+    park_end(s, was);
+}
+
 void sb_session_set_volume(sb_session *s, int volume_256)
 {
     if (!s) return;
