@@ -19,6 +19,10 @@ struct sb_emulator {
     double applied_rewind_seconds;  /* cache: GB_set_rewind_length wipes history, so skip if unchanged */
     GB_palette_t custom_palette;    /* GB_set_palette stores a pointer; keep custom alive here */
     atomic_int rumble_amp;          /* 0..255, latest from rumble_cb */
+    pthread_mutex_t printer_mtx;
+    uint32_t       *printer_feed;        /* 160 * printer_rows ARGB, malloc/realloc */
+    unsigned        printer_rows;
+    atomic_uint     printer_generation;
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -80,12 +84,88 @@ static void rumble_cb(GB_gameboy_t *gb, double amplitude)
     atomic_store(&e->rumble_amp, (int)(amplitude * 255 + 0.5));
 }
 
+#define SB_PRINTER_W 160
+
+void sb_printer_append(uint32_t **buf, unsigned *rows, const uint32_t *image,
+                       unsigned height, unsigned top, unsigned bottom)
+{
+    unsigned add = top + height + bottom;
+    if (add == 0) return;
+    unsigned new_rows = *rows + add;
+    uint32_t *grown = realloc(*buf, (size_t)new_rows * SB_PRINTER_W * sizeof(uint32_t));
+    if (!grown) return;                 /* keep the old buffer on OOM */
+    *buf = grown;
+    uint32_t *p = grown + (size_t)*rows * SB_PRINTER_W;
+    memset(p, 0xFF, (size_t)top * SB_PRINTER_W * sizeof(uint32_t));   /* white top margin */
+    p += (size_t)top * SB_PRINTER_W;
+    if (height && image) memcpy(p, image, (size_t)height * SB_PRINTER_W * sizeof(uint32_t));
+    p += (size_t)height * SB_PRINTER_W;
+    memset(p, 0xFF, (size_t)bottom * SB_PRINTER_W * sizeof(uint32_t)); /* white bottom margin */
+    *rows = new_rows;
+}
+
+static void print_image_cb(GB_gameboy_t *gb, uint32_t *image, uint8_t height,
+                           uint8_t top_margin, uint8_t bottom_margin, uint8_t exposure)
+{
+    (void)exposure;
+    sb_emulator *e = GB_get_user_data(gb);
+    pthread_mutex_lock(&e->printer_mtx);
+    sb_printer_append(&e->printer_feed, &e->printer_rows, image, height, top_margin, bottom_margin);
+    pthread_mutex_unlock(&e->printer_mtx);
+    atomic_fetch_add(&e->printer_generation, 1);
+}
+
+static void printer_done_cb(GB_gameboy_t *gb)
+{
+    sb_emulator *e = GB_get_user_data(gb);
+    atomic_fetch_add(&e->printer_generation, 1);
+}
+
+void sb_emu_connect_printer(sb_emulator *e)
+{
+    if (e) GB_connect_printer(&e->gb, print_image_cb, printer_done_cb);
+}
+
+void sb_emu_disconnect_printer(sb_emulator *e)
+{
+    if (e) GB_disconnect_serial(&e->gb);
+}
+
+unsigned sb_emu_printer_generation(sb_emulator *e)
+{
+    return e ? atomic_load(&e->printer_generation) : 0;
+}
+
+unsigned sb_emu_printer_feed(sb_emulator *e, uint32_t *dst, unsigned max_rows)
+{
+    if (!e) return 0;
+    pthread_mutex_lock(&e->printer_mtx);
+    unsigned rows = e->printer_rows;
+    if (dst && max_rows) {
+        unsigned n = rows < max_rows ? rows : max_rows;
+        memcpy(dst, e->printer_feed, (size_t)n * SB_PRINTER_W * sizeof(uint32_t));
+    }
+    pthread_mutex_unlock(&e->printer_mtx);
+    return rows;
+}
+
+void sb_emu_printer_clear(sb_emulator *e)
+{
+    if (!e) return;
+    pthread_mutex_lock(&e->printer_mtx);
+    free(e->printer_feed);
+    e->printer_feed = NULL;
+    e->printer_rows = 0;
+    pthread_mutex_unlock(&e->printer_mtx);
+}
+
 sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
                            const uint8_t *sav, size_t sav_len)
 {
     sb_emulator *e = calloc(1, sizeof(*e));
     if (!e) return NULL;
     pthread_mutex_init(&e->fb_mtx, NULL);
+    pthread_mutex_init(&e->printer_mtx, NULL);
     /* ~100 ms ring. sb_ring_push blocks when full, so at runtime the AAudio
        callback's pop rate paces the emulation thread (audio is the master
        clock). Kept small so the emu thread never runs far ahead of playback.
@@ -295,6 +375,8 @@ void sb_emu_destroy(sb_emulator *e)
     GB_free(&e->gb);
     sb_ring_destroy(e->audio);
     for (int i = 0; i < SB_BOOT_ROM_COUNT; i++) free(e->boot[i].data);
+    free(e->printer_feed);
+    pthread_mutex_destroy(&e->printer_mtx);
     pthread_mutex_destroy(&e->fb_mtx);
     free(e);
 }

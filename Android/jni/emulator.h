@@ -60,4 +60,18 @@ void sb_emu_set_palette(sb_emulator *e, int builtin_index, const uint32_t rgb[4]
 void sb_emu_set_volume_ptr(sb_emulator *e, const atomic_int *volume);  /* 256 = 1.0; NULL = full */
 int sb_emu_rumble_amplitude(sb_emulator *e);   /* 0..255, latest from the rumble callback */
 
+/* --- Game Boy Printer (M7) --- */
+void     sb_emu_connect_printer(sb_emulator *e);     /* GB_connect_printer; call parked */
+void     sb_emu_disconnect_printer(sb_emulator *e);  /* GB_disconnect_serial; call parked */
+unsigned sb_emu_printer_generation(sb_emulator *e);  /* atomic; bumps per printed image + done */
+/* Copies up to max_rows rows (160 px each) into dst; returns rows currently available.
+   dst may be NULL / max_rows 0 to just query the row count. */
+unsigned sb_emu_printer_feed(sb_emulator *e, uint32_t *dst, unsigned max_rows);
+void     sb_emu_printer_clear(sb_emulator *e);
+
+/* Pure, testable: grow *buf to (*rows + top + height + bottom) rows of 160 px, fill the
+   top/bottom margin rows white (0xFFFFFFFF) and copy `height` rows from `image`. */
+void     sb_printer_append(uint32_t **buf, unsigned *rows, const uint32_t *image,
+                           unsigned height, unsigned top, unsigned bottom);
+
 #define SB_AUDIO_SAMPLE_RATE 48000

@@ -293,6 +293,22 @@ static void test_palette(void)
     free(rom);
 }
 
+static void test_printer(void)
+{
+    uint32_t *buf = NULL; unsigned rows = 0;
+    uint32_t src[160 * 2];
+    for (int i = 0; i < 160 * 2; i++) src[i] = 0xFF123456u;  /* sentinel image pixels */
+    sb_printer_append(&buf, &rows, src, 2, 1, 3);            /* top 1, img 2, bottom 3 */
+    assert(rows == 6);
+    for (int x = 0; x < 160; x++) assert(buf[x] == 0xFFFFFFFFu);           /* top white */
+    for (int i = 0; i < 160 * 2; i++) assert(buf[160 + i] == 0xFF123456u); /* image */
+    for (int x = 0; x < 160 * 3; x++) assert(buf[160 * 3 + x] == 0xFFFFFFFFu); /* bottom white */
+    sb_printer_append(&buf, &rows, src, 2, 0, 0);            /* grows, appends after */
+    assert(rows == 8);
+    assert(buf[160 * 6] == 0xFF123456u);
+    free(buf);
+}
+
 static void test_rumble(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -364,6 +380,7 @@ int main(void)
     test_volume_scale();
     test_palette();
     test_rumble();
+    test_printer();
     printf("emulator: all tests passed\n");
     return 0;
 }
