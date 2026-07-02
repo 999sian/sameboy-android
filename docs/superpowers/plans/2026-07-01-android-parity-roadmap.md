@@ -19,6 +19,11 @@ key decisions, dependencies, and acceptance.
   `content://` read in `AppOpsService`/`MediaProvider`; same limitation M2 hit); it works
   on real devices. See `specs/2026-07-01-android-m3-library.md` and
   `plans/2026-07-01-android-m3-library.md`.
+- **M4 (Settings) is DONE and on-device verified** (Waydroid, x86_64) — emulation/video/
+  audio/controls settings persist and apply live to the running game (verified: color
+  correction change visible + persisted across restart; 60% opacity default applied;
+  Settings reachable from library and in-game menu). Host tests + 4-ABI build green. See
+  `specs/2026-07-01-android-m4-settings.md` and `plans/2026-07-01-android-m4-settings.md`.
 - Later milestones are **not yet specced**; the detail here is enough to start each one.
 
 ## Architecture recap (stable across all milestones)
@@ -46,7 +51,7 @@ Core/*.c  (unchanged; 17-file set, -DGB_INTERNAL -DGB_DISABLE_DEBUGGER)
 
 ```
 M1 Foundation ✅
-   └─ M2 State & session ✅ ──┬─ M3 Library ✅ ── M4 Settings ── M5 Color & theme
+   └─ M2 State & session ✅ ──┬─ M3 Library ✅ ── M4 Settings ✅ ── M5 Color & theme
                              └─ M6 Physical input
    (M2 recommended before others: in-game menu is the host for most later UI)
 M7 Peripherals   — depends on M2 (menu) + M4 (settings toggles)
