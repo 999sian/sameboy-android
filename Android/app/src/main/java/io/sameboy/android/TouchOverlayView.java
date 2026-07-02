@@ -24,8 +24,13 @@ class TouchOverlayView extends View {
     // per-pointer key assignment + per-key refcount (multiple fingers may hold one key)
     private final java.util.HashMap<Integer, Integer> pointerKey = new java.util.HashMap<>();
     private final int[] keyCount = new int[11]; // GB_KEY_MAX + specials
+    private float opacity = 0.6f;
+    private boolean haptics = true;
 
     TouchOverlayView(Context ctx, ControlListener l) { super(ctx); this.listener = l; }
+
+    void setOpacity(float a) { opacity = a; invalidate(); }
+    void setHaptics(boolean on) { haptics = on; }
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
         float u = Math.min(w, h) / 10f;            // unit
@@ -64,10 +69,12 @@ class TouchOverlayView extends View {
         if (old != null) releasePointer(pointerId);     // moved off previous key
         pointerKey.put(pointerId, k);
         if (k == SPECIAL_MENU) {
+            if (haptics) performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
             listener.onSpecial(SPECIAL_MENU, true);
             return;
         }
         if (keyCount[k]++ == 0) {
+            if (haptics) performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
             if (k < 8) listener.onKey(k, true);
             else listener.onSpecial(k, true);
         }
@@ -133,19 +140,18 @@ class TouchOverlayView extends View {
     }
 
     @Override protected void onDraw(Canvas c) {
-        paint.setColor(Color.argb(90, 255, 255, 255));
+        paint.setColor(Color.argb((int) (90 * opacity), 255, 255, 255));
         for (RectF r : new RectF[]{up, down, left, right}) if (r != null) c.drawRect(r, paint);
-        paint.setColor(Color.argb(120, 200, 60, 90));
+        paint.setColor(Color.argb((int) (120 * opacity), 200, 60, 90));
         if (a != null) c.drawOval(a, paint);
         if (b != null) c.drawOval(b, paint);
-        paint.setColor(Color.argb(110, 180, 180, 180));
+        paint.setColor(Color.argb((int) (110 * opacity), 180, 180, 180));
         if (start != null) c.drawRoundRect(start, 12, 12, paint);
         if (select != null) c.drawRoundRect(select, 12, 12, paint);
-        paint.setColor(Color.argb(110, 180, 180, 180));
         if (rewind != null) c.drawRoundRect(rewind, 12, 12, paint);
         if (turbo != null) c.drawRoundRect(turbo, 12, 12, paint);
         if (menu != null) c.drawRoundRect(menu, 12, 12, paint);
-        paint.setColor(Color.argb(200, 255, 255, 255));
+        paint.setColor(Color.argb((int) (200 * opacity), 255, 255, 255));
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTextSize(rewind != null ? rewind.height() * 0.6f : 24);
         if (rewind != null) c.drawText("<<", rewind.centerX(), rewind.centerY() + rewind.height() * 0.2f, paint);
