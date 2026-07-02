@@ -52,8 +52,12 @@ final class Settings {
     boolean haptics()       { return p.getBoolean(K_HAPTICS, true); }
     void setHaptics(boolean v){ p.edit().putBoolean(K_HAPTICS, v).apply(); }
 
-    /** Model to boot the next launch. */
-    int modelForLaunch() { return model(); }
+    /** Model to boot the next launch — validated against the three supported models
+     *  (a corrupt/tampered prefs value would otherwise reach GB_init unclamped). */
+    int modelForLaunch() {
+        int m = model();
+        return (m == NativeBridge.MODEL_DMG_B || m == NativeBridge.MODEL_AGB) ? m : NativeBridge.MODEL_CGB_E;
+    }
     /** On-screen control alpha 0..1. */
     float buttonOpacity() { return buttonOpacityPct() / 100f; }
 

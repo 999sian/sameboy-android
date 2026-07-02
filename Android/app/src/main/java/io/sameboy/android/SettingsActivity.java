@@ -94,12 +94,16 @@ public class SettingsActivity extends Activity {
         SeekBar bar = new SeekBar(this);
         bar.setMax(max - min);
         bar.setProgress(current - min);
+        final boolean[] touchTracking = { false };
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
                 cur[0] = min + progress; render.run();
+                // d-pad / keyboard / accessibility changes fire only this callback (no touch
+                // tracking); commit those immediately. Touch drags commit on stop instead.
+                if (fromUser && !touchTracking[0]) sink.set(cur[0]);
             }
-            @Override public void onStartTrackingTouch(SeekBar sb) {}
-            @Override public void onStopTrackingTouch(SeekBar sb) { sink.set(cur[0]); }
+            @Override public void onStartTrackingTouch(SeekBar sb) { touchTracking[0] = true; }
+            @Override public void onStopTrackingTouch(SeekBar sb) { touchTracking[0] = false; sink.set(cur[0]); }
         });
         col.addView(bar);
     }

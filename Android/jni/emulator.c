@@ -16,6 +16,7 @@ struct sb_emulator {
     struct { uint8_t *data; size_t len; } boot[SB_BOOT_ROM_COUNT];  /* owned copies */
     const atomic_bool *audio_drop;
     const atomic_int *volume;
+    double applied_rewind_seconds;  /* cache: GB_set_rewind_length wipes history, so skip if unchanged */
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -95,6 +96,7 @@ sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
     GB_load_rom_from_buffer(&e->gb, rom, rom_len);
     if (sav && sav_len) GB_load_battery_from_buffer(&e->gb, sav, sav_len);
     GB_set_rewind_length(&e->gb, 120);
+    e->applied_rewind_seconds = 120;
     return e;
 }
 
@@ -241,7 +243,11 @@ void sb_emu_apply_settings(sb_emulator *e, const sb_settings *s)
     GB_set_border_mode(&e->gb, (GB_border_mode_t)s->border_mode);
     GB_set_highpass_filter_mode(&e->gb, (GB_highpass_mode_t)s->highpass);
     GB_set_rtc_mode(&e->gb, (GB_rtc_mode_t)s->rtc_mode);
-    GB_set_rewind_length(&e->gb, s->rewind_seconds);
+    /* GB_set_rewind_length calls GB_rewind_reset (wipes history) — only when it changes */
+    if (s->rewind_seconds != e->applied_rewind_seconds) {
+        GB_set_rewind_length(&e->gb, s->rewind_seconds);
+        e->applied_rewind_seconds = s->rewind_seconds;
+    }
     GB_set_turbo_cap(&e->gb, s->turbo_cap);
     GB_set_interference_volume(&e->gb, s->interference);
 }

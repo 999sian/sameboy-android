@@ -43,7 +43,7 @@ final class GameMenuDialog {
                     case 2: chained[0] = true; showSlots(a, h, false); break;
                     case 3: h.onResetGame(); break;
                     case 4: chained[0] = true; showModels(a, h); break;
-                    case 5: h.onOpenSettings(); return;   // leaves menu; EmulatorActivity re-applies on resume
+                    case 5: chained[0] = true; h.onOpenSettings(); return;   // leaves menu; EmulatorActivity re-applies on resume
                     case 6: h.onExitGame(); return;
                     default: break;                   // 0 = Resume: just dismiss
                 }
