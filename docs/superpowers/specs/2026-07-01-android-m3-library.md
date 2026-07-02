@@ -54,10 +54,11 @@ changing the save-file naming scheme (stays display-name based, see §6).
   different ROMs both named `pokemon.gbc` never collide. Library launches pass
   `EXTRA_ROM_KEY` = the entry's `crc32` (8-hex, from `GB_get_rom_crc32`); the CRC is the
   same canonical identity SameBoy uses everywhere. `EmulatorActivity` uses `EXTRA_ROM_KEY`
-  when present and **falls back to the display-name-derived `romName` only for external
-  one-shot opens** (no extra) — preserving the exact M2 on-device save/state paths for
-  ROMs launched outside the library. Existing M1/M2 saves (display-name keyed) are not
-  migrated; they remain reachable via the external-open fallback.
+  when present and falls back to the display-name-derived `romName` only for external
+  one-shot opens (`am start` with a data Uri and no extra — the M2/dev path; not
+  reachable from the library UI). M1/M2 was never released, so there is no installed
+  base of display-name-keyed saves to migrate; the fallback exists to keep external
+  opens behaving exactly as M2 did.
 
 ## 3. Native surface (one addition)
 
@@ -135,8 +136,10 @@ library launch supplies it, else the display-name-derived `romName` for external
 opens (exact M2 behavior). Two different ROMs named `pokemon.gbc` get distinct save keys
 (their CRCs differ); a ROM opened outside the library keeps its M2 path. There is no
 visible title surface in `EmulatorActivity`, so no display-label extra is forwarded.
-Existing M1/M2 saves/states are not migrated — they stay reachable through the
-external-open (display-name) fallback.
+`EmulatorActivity` is not exported and has no VIEW filter, so every library launch
+carries `EXTRA_ROM_KEY`; the display-name path is only hit by an external `am start`
+(the M2/dev flow). M1/M2 shipped to no users, so there is nothing to migrate — the
+fallback simply preserves M2's exact behavior for external opens.
 
 ## 7. Files
 
