@@ -21,5 +21,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".SettingsActivity" android:exported="false"
                   android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".GamepadRemapActivity" android:exported="false"
+                  android:configChanges="orientation|screenSize|keyboardHidden" />
     </application>
 </manifest>
