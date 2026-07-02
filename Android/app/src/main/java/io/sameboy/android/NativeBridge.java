@@ -30,6 +30,13 @@ public final class NativeBridge {
             int rumbleMode);
     public static native void nativeSetVolume(long ctx, int volume256);
     public static native void nativeSetPalette(long ctx, int builtinIndex, int c0, int c1, int c2, int c3);
+    public static native void nativeConnectPrinter(long ctx);
+    public static native void nativeDisconnectPrinter(long ctx);
+    public static native int nativePrinterGeneration(long ctx);
+    public static native int[] nativePrinterFeed(long ctx);      // ARGB, length rows*160 (0 if empty)
+    public static native void nativePrinterClear(long ctx);
+    public static native boolean nativeCameraWanted(long ctx);
+    public static native void nativeCameraDeliver(long ctx, byte[] gray);  // 128*112 bytes
     public static native int nativeRumbleAmplitude(long ctx);
     public static native void nativeDestroy(long ctx);
 

@@ -240,6 +240,58 @@ Java_io_sameboy_android_NativeBridge_nativeSetPalette(JNIEnv *env, jclass c, jlo
                            builtinIndex >= 0 ? NULL : rgb);
 }
 
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeConnectPrinter(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; sb_session_connect_printer((sb_session *)(uintptr_t)ctx); }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeDisconnectPrinter(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; sb_session_disconnect_printer((sb_session *)(uintptr_t)ctx); }
+
+JNIEXPORT jint JNICALL
+Java_io_sameboy_android_NativeBridge_nativePrinterGeneration(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; return (jint)sb_session_printer_generation((sb_session *)(uintptr_t)ctx); }
+
+JNIEXPORT jintArray JNICALL
+Java_io_sameboy_android_NativeBridge_nativePrinterFeed(JNIEnv *env, jclass c, jlong ctx)
+{
+    (void)c;
+    sb_session *s = (sb_session *)(uintptr_t)ctx;
+    unsigned rows = sb_session_printer_feed(s, NULL, 0);
+    if (rows == 0) return (*env)->NewIntArray(env, 0);
+    jsize n = (jsize)rows * 160;
+    jintArray arr = (*env)->NewIntArray(env, n);
+    if (!arr) return NULL;
+    uint32_t *tmp = malloc((size_t)n * sizeof(uint32_t));
+    if (!tmp) return arr;
+    sb_session_printer_feed(s, tmp, rows);
+    (*env)->SetIntArrayRegion(env, arr, 0, n, (const jint *)tmp);
+    free(tmp);
+    return arr;
+}
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativePrinterClear(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; sb_session_printer_clear((sb_session *)(uintptr_t)ctx); }
+
+JNIEXPORT jboolean JNICALL
+Java_io_sameboy_android_NativeBridge_nativeCameraWanted(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; return sb_session_camera_wanted((sb_session *)(uintptr_t)ctx) ? JNI_TRUE : JNI_FALSE; }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeCameraDeliver(JNIEnv *env, jclass c, jlong ctx, jbyteArray gray)
+{
+    (void)c;
+    sb_session *s = (sb_session *)(uintptr_t)ctx;
+    if (!gray) return;
+    jsize n = (*env)->GetArrayLength(env, gray);
+    if (n != 128 * 112) return;
+    jbyte *buf = (*env)->GetByteArrayElements(env, gray, NULL);
+    if (!buf) return;
+    sb_session_camera_deliver(s, (const uint8_t *)buf);
+    (*env)->ReleaseByteArrayElements(env, gray, buf, JNI_ABORT);
+}
+
 JNIEXPORT jint JNICALL
 Java_io_sameboy_android_NativeBridge_nativeRumbleAmplitude(JNIEnv *env, jclass c, jlong ctx)
 { (void)env; (void)c; return sb_session_rumble_amplitude((sb_session *)(uintptr_t)ctx); }
