@@ -24,6 +24,12 @@ key decisions, dependencies, and acceptance.
   correction change visible + persisted across restart; 60% opacity default applied;
   Settings reachable from library and in-game menu). Host tests + 4-ABI build green. See
   `specs/2026-07-01-android-m4-settings.md` and `plans/2026-07-01-android-m4-settings.md`.
+- **M5 (Color & theme) is DONE and on-device verified** (Waydroid, x86_64) — DMG palette
+  picker (4 built-ins + custom 4-shade editor) recolors DMG-mode games live via
+  `GB_set_palette` (verified: DMG green → Greyscale on a running DMG game); app light/dark
+  theme via AppCompat DayNight (verified: Light switch live + persisted across restart,
+  independent of the GB palette). Host tests + 4-ABI build green. See
+  `specs/2026-07-01-android-m5-color-theme.md` and `plans/2026-07-01-android-m5-color-theme.md`.
 - Later milestones are **not yet specced**; the detail here is enough to start each one.
 
 ## Architecture recap (stable across all milestones)
@@ -51,7 +57,7 @@ Core/*.c  (unchanged; 17-file set, -DGB_INTERNAL -DGB_DISABLE_DEBUGGER)
 
 ```
 M1 Foundation ✅
-   └─ M2 State & session ✅ ──┬─ M3 Library ✅ ── M4 Settings ✅ ── M5 Color & theme
+   └─ M2 State & session ✅ ──┬─ M3 Library ✅ ── M4 Settings ✅ ── M5 Color & theme ✅
                              └─ M6 Physical input
    (M2 recommended before others: in-game menu is the host for most later UI)
 M7 Peripherals   — depends on M2 (menu) + M4 (settings toggles)
