@@ -3,6 +3,8 @@ package io.sameboy.android;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import androidx.appcompat.app.AppCompatDelegate;
+
 /** Persistent user settings + one-shot apply to a running session.
  *  Sliders store ints; the Core mapping mirrors SameBoy's SDL frontend. */
 final class Settings {
@@ -21,6 +23,15 @@ final class Settings {
     private static final String K_INTERFERENCE = "interference_pct"; // 0..100
     private static final String K_OPACITY = "button_opacity_pct";  // 0..100
     private static final String K_HAPTICS = "haptics";             // bool
+    private static final String K_PALETTE = "palette_builtin";     // 0..3, or -1 custom
+    private static final String K_CUSTOM0 = "palette_custom0";      // 0xRRGGBB
+    private static final String K_CUSTOM1 = "palette_custom1";
+    private static final String K_CUSTOM2 = "palette_custom2";
+    private static final String K_CUSTOM3 = "palette_custom3";
+    private static final String K_THEME = "theme_mode";             // 0 System,1 Light,2 Dark
+
+    // default custom = greyscale shades (darkest..lightest)
+    private static final int[] CUSTOM_DEFAULT = { 0x000000, 0x555555, 0xAAAAAA, 0xFFFFFF };
 
     private final SharedPreferences p;
 
@@ -51,6 +62,18 @@ final class Settings {
     void setButtonOpacityPct(int v){ p.edit().putInt(K_OPACITY, v).apply(); }
     boolean haptics()       { return p.getBoolean(K_HAPTICS, true); }
     void setHaptics(boolean v){ p.edit().putBoolean(K_HAPTICS, v).apply(); }
+    int paletteBuiltin()        { return p.getInt(K_PALETTE, 1); }   // default DMG
+    void setPaletteBuiltin(int v){ p.edit().putInt(K_PALETTE, v).apply(); }
+    int customColor(int i) {
+        String[] keys = { K_CUSTOM0, K_CUSTOM1, K_CUSTOM2, K_CUSTOM3 };
+        return p.getInt(keys[i], CUSTOM_DEFAULT[i]);
+    }
+    void setCustomColor(int i, int rgb) {
+        String[] keys = { K_CUSTOM0, K_CUSTOM1, K_CUSTOM2, K_CUSTOM3 };
+        p.edit().putInt(keys[i], rgb & 0xFFFFFF).apply();
+    }
+    int themeMode()             { return p.getInt(K_THEME, 0); }
+    void setThemeMode(int v)    { p.edit().putInt(K_THEME, v).apply(); }
 
     /** Model to boot the next launch — validated against the three supported models
      *  (a corrupt/tampered prefs value would otherwise reach GB_init unclamped). */
@@ -74,5 +97,19 @@ final class Settings {
             turboCapQuarters() / 4.0,
             interferencePct() / 100.0);
         NativeBridge.nativeSetVolume(ctx, volumePct() * 256 / 100);
+        int builtin = paletteBuiltin();
+        NativeBridge.nativeSetPalette(ctx, builtin,
+            customColor(0), customColor(1), customColor(2), customColor(3));
+    }
+
+    /** Apply the app light/dark theme globally (call at process start + on change). */
+    void applyTheme() {
+        int mode;
+        switch (themeMode()) {
+            case 1:  mode = AppCompatDelegate.MODE_NIGHT_NO; break;
+            case 2:  mode = AppCompatDelegate.MODE_NIGHT_YES; break;
+            default: mode = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM; break;
+        }
+        AppCompatDelegate.setDefaultNightMode(mode);
     }
 }
