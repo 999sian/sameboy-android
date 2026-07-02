@@ -67,6 +67,27 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         @Override public void onInputDeviceRemoved(int id) { releaseAllKeys(); refreshOverlayVisibility(); }
         @Override public void onInputDeviceChanged(int id) { refreshOverlayVisibility(); }
     };
+    private static final int REQ_CAMERA = 42;
+    private android.hardware.camera2.CameraDevice cameraDevice;
+    private android.hardware.camera2.CameraCaptureSession cameraSession;
+    private android.media.ImageReader cameraReader;
+    private android.os.HandlerThread cameraThread;
+    private android.os.Handler cameraHandler;
+    private boolean cameraRunning = false;
+    private long lastCameraWant = 0;
+    private final byte[] cameraGray = new byte[128 * 112];
+    private final Runnable cameraPoll = new Runnable() {
+        @Override public void run() {
+            if (ctx != 0 && NativeBridge.nativeCameraWanted(ctx)) {
+                lastCameraWant = android.os.SystemClock.uptimeMillis();
+                if (!cameraRunning) ensureCameraPermissionAndStart();
+            } else if (cameraRunning &&
+                       android.os.SystemClock.uptimeMillis() - lastCameraWant > 1500) {
+                stopCamera();   // idle → release the camera (mirrors iOS 1s disable timer)
+            }
+            handler.postDelayed(this, 200);
+        }
+    };
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -165,6 +186,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         super.onPause();
         handler.removeCallbacks(batteryPoll);
         handler.removeCallbacks(rumblePoll);
+        handler.removeCallbacks(cameraPoll);
+        stopCamera();
         InputManager im = (InputManager) getSystemService(INPUT_SERVICE);
         if (im != null) im.unregisterInputDeviceListener(padListener);
         if (vibrator != null) { try { vibrator.cancel(); } catch (Exception ignored) {} }
@@ -187,7 +210,101 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         InputManager im = (InputManager) getSystemService(INPUT_SERVICE);
         if (im != null) im.registerInputDeviceListener(padListener, handler);
         handler.postDelayed(rumblePoll, 50);
+        handler.postDelayed(cameraPoll, 500);
         refreshOverlayVisibility();
+    }
+
+    private void ensureCameraPermissionAndStart() {
+        if (checkSelfPermission(android.Manifest.permission.CAMERA)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{ android.Manifest.permission.CAMERA }, REQ_CAMERA);
+            return;   // onRequestPermissionsResult starts it if granted
+        }
+        openCamera();
+    }
+
+    @Override public void onRequestPermissionsResult(int req, String[] p, int[] r) {
+        super.onRequestPermissionsResult(req, p, r);
+        if (req == REQ_CAMERA) {
+            if (r.length > 0 && r[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) openCamera();
+            else Toast.makeText(this, "Camera denied; using noise", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @SuppressWarnings("MissingPermission")
+    private void openCamera() {
+        if (cameraRunning) return;
+        android.hardware.camera2.CameraManager cm =
+                (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+        try {
+            String pick = null;
+            for (String id : cm.getCameraIdList()) {
+                Integer f = cm.getCameraCharacteristics(id).get(
+                        android.hardware.camera2.CameraCharacteristics.LENS_FACING);
+                if (pick == null) pick = id;
+                if (f != null && f == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK) { pick = id; break; }
+            }
+            if (pick == null) return;   // no camera (e.g. Waydroid) → ROM keeps its noise
+            cameraThread = new android.os.HandlerThread("sb-cam");
+            cameraThread.start();
+            cameraHandler = new android.os.Handler(cameraThread.getLooper());
+            cameraReader = android.media.ImageReader.newInstance(
+                    176, 144, android.graphics.ImageFormat.YUV_420_888, 2);
+            cameraReader.setOnImageAvailableListener(reader -> {
+                android.media.Image img = reader.acquireLatestImage();
+                if (img != null) { deliverFrame(img); img.close(); }
+            }, cameraHandler);
+            cameraRunning = true;
+            cm.openCamera(pick, new android.hardware.camera2.CameraDevice.StateCallback() {
+                @Override public void onOpened(android.hardware.camera2.CameraDevice d) {
+                    cameraDevice = d;
+                    try {
+                        final android.hardware.camera2.CaptureRequest.Builder rb =
+                            d.createCaptureRequest(android.hardware.camera2.CameraDevice.TEMPLATE_PREVIEW);
+                        rb.addTarget(cameraReader.getSurface());
+                        d.createCaptureSession(
+                            java.util.Collections.singletonList(cameraReader.getSurface()),
+                            new android.hardware.camera2.CameraCaptureSession.StateCallback() {
+                                @Override public void onConfigured(android.hardware.camera2.CameraCaptureSession s) {
+                                    cameraSession = s;
+                                    try { s.setRepeatingRequest(rb.build(), null, cameraHandler); }
+                                    catch (Exception ignored) {}
+                                }
+                                @Override public void onConfigureFailed(android.hardware.camera2.CameraCaptureSession s) {}
+                            }, cameraHandler);
+                    } catch (Exception ignored) {}
+                }
+                @Override public void onDisconnected(android.hardware.camera2.CameraDevice d) { d.close(); cameraDevice = null; }
+                @Override public void onError(android.hardware.camera2.CameraDevice d, int e) { d.close(); cameraDevice = null; }
+            }, cameraHandler);
+        } catch (Exception e) { cameraRunning = false; }
+    }
+
+    /** Y plane → center-cropped 128x112 grayscale → native. */
+    private void deliverFrame(android.media.Image img) {
+        android.media.Image.Plane y = img.getPlanes()[0];
+        java.nio.ByteBuffer buf = y.getBuffer();
+        int rowStride = y.getRowStride();
+        int w = img.getWidth(), h = img.getHeight();
+        int cropX = Math.max(0, (w - 128) / 2);
+        int cropY = Math.max(0, (h - 112) / 2);
+        for (int ry = 0; ry < 112; ry++) {
+            int sy = Math.min(h - 1, cropY + ry);
+            for (int rx = 0; rx < 128; rx++) {
+                int sx = Math.min(w - 1, cropX + rx);
+                cameraGray[ry * 128 + rx] = buf.get(sy * rowStride + sx);
+            }
+        }
+        if (ctx != 0) NativeBridge.nativeCameraDeliver(ctx, cameraGray);
+    }
+
+    private void stopCamera() {
+        cameraRunning = false;
+        try { if (cameraSession != null) cameraSession.close(); } catch (Exception ignored) {}
+        try { if (cameraDevice != null) cameraDevice.close(); } catch (Exception ignored) {}
+        try { if (cameraReader != null) cameraReader.close(); } catch (Exception ignored) {}
+        cameraSession = null; cameraDevice = null; cameraReader = null;
+        if (cameraThread != null) { cameraThread.quitSafely(); cameraThread = null; cameraHandler = null; }
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
