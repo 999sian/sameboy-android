@@ -202,6 +202,22 @@ void sb_emu_clear_battery_dirty(sb_emulator *e)
     GB_clear_battery_dirty(&e->gb);
 }
 
+int sb_rom_info(const uint8_t *rom, size_t len, char *title, uint32_t *crc32)
+{
+    if (len < 0x150) return -1;
+    /* GB_gameboy_t is large and embedded by value elsewhere; heap-allocate it
+       rather than risk a worker-thread stack. */
+    GB_gameboy_t *gb = malloc(sizeof(GB_gameboy_t));
+    if (!gb) return -1;
+    GB_init(gb, GB_MODEL_CGB_E);
+    GB_load_rom_from_buffer(gb, rom, len);
+    GB_get_rom_title(gb, title);
+    *crc32 = GB_get_rom_crc32(gb);
+    GB_free(gb);
+    free(gb);
+    return 0;
+}
+
 void sb_emu_destroy(sb_emulator *e)
 {
     if (!e) return;

@@ -37,4 +37,9 @@ int    sb_emu_rewind_pop(sb_emulator *e);                               /* 1 = p
 int    sb_emu_battery_dirty(sb_emulator *e);                            /* emu thread / parked only */
 void   sb_emu_clear_battery_dirty(sb_emulator *e);
 
+/* Reads ROM title + CRC32 via a throwaway Core init (no session/emulator).
+   title must be >= 17 bytes; it is NUL-terminated. Returns 0 on success,
+   -1 if len < 0x150 (too small to be a cartridge). */
+int sb_rom_info(const uint8_t *rom, size_t len, char *title, uint32_t *crc32);
+
 #define SB_AUDIO_SAMPLE_RATE 48000

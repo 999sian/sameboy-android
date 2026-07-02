@@ -169,6 +169,40 @@ static void test_audio_drop_nonblocking(void)
     free(rom);
 }
 
+/* Reference CRC32 (zlib/ISO-HDLC) over an exact buffer — matches GB_get_rom_crc32
+   when the ROM is already a power-of-two size (no Core padding). */
+static uint32_t ref_crc32(const uint8_t *p, size_t n)
+{
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; i++) {
+        crc ^= p[i];
+        for (int k = 0; k < 8; k++)
+            crc = (crc >> 1) ^ (0xEDB88320u & (uint32_t)(-(int32_t)(crc & 1)));
+    }
+    return ~crc;
+}
+
+static void test_rom_info(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);   /* exactly 0x8000, power of two */
+    /* stamp a known title at 0x134 (printable, < 0x10 chars) */
+    const char *want = "TESTROM";
+    memset(&rom[0x134], 0, 0x10);
+    memcpy(&rom[0x134], want, strlen(want));
+
+    char title[17];
+    uint32_t crc = 0;
+    assert(sb_rom_info(rom, rlen, title, &crc) == 0);
+    assert(strcmp(title, want) == 0);
+    assert(crc == ref_crc32(rom, rlen));   /* CRC over the unpadded 32KB buffer */
+
+    /* too-small buffer rejected */
+    uint8_t tiny[4] = {1,2,3,4};
+    assert(sb_rom_info(tiny, sizeof(tiny), title, &crc) == -1);
+
+    free(rom);
+}
+
 int main(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -215,6 +249,7 @@ int main(void)
     test_model_switch_and_state_model();
     test_battery_dirty();
     test_audio_drop_nonblocking();
+    test_rom_info();
     printf("emulator: all tests passed\n");
     return 0;
 }
