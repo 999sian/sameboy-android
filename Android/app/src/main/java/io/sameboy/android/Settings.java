@@ -29,6 +29,7 @@ final class Settings {
     private static final String K_CUSTOM2 = "palette_custom2";
     private static final String K_CUSTOM3 = "palette_custom3";
     private static final String K_THEME = "theme_mode";             // 0 System,1 Light,2 Dark
+    private static final String K_RUMBLE = "rumble_mode";  // 0 disabled,1 cartridge,2 all
 
     // default custom = greyscale shades (darkest..lightest)
     private static final int[] CUSTOM_DEFAULT = { 0x000000, 0x555555, 0xAAAAAA, 0xFFFFFF };
@@ -83,8 +84,8 @@ final class Settings {
     }
     /** On-screen control alpha 0..1. */
     float buttonOpacity() { return buttonOpacityPct() / 100f; }
-    /** TEMPORARY: Task 3 replaces this with the real pref accessor. */
-    int rumbleMode() { return 1; }
+    int rumbleMode()          { return p.getInt(K_RUMBLE, 1); }
+    void setRumbleMode(int v) { p.edit().putInt(K_RUMBLE, v).apply(); }
 
     /** Push every Core-backed setting + volume to a running session. */
     void apply(long ctx) {
