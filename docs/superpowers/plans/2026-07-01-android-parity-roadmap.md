@@ -37,6 +37,18 @@ key decisions, dependencies, and acceptance.
   on-screen controls auto-hide when a pad is present. Motor buzz + hide-on-connect need
   real hardware (no gamepad/vibrator on the AVD). Host tests + 4-ABI build green. See
   `specs/2026-07-01-android-m6-physical-input.md` and `plans/2026-07-01-android-m6-physical-input.md`.
+- **M7 (Peripherals) is DONE and on-device verified** (Waydroid, x86_64) — Game Boy
+  Printer (Core callbacks → 160px ARGB feed buffer, self-parked connect/disconnect; a
+  `PrinterFeedActivity` renders the feed and can save to Pictures / share PNG / clear;
+  accessory menu wires None/Printer) and Game Boy Camera (Camera2 back-lens frames →
+  Y-plane 8:7 crop → 128×112 grayscale → sensor; runtime CAMERA permission; camera-`wanted`
+  poller starts/idle-stops the device camera). A whole-branch review caught two camera P0/P1
+  bugs (busy-bit soft-lock, `wanted` latch), now fixed (busy-clear deferred past Core's
+  register store on the emu thread; consuming `wanted`) + Camera2 lifecycle hardening.
+  Verified on-device: accessory menu + feed screen + menu index-remap regression + dormant
+  camera poller on a non-camera ROM. Printout *content* needs a printing ROM; camera
+  viewfinder/photo need a Game Boy Camera ROM + real camera. Host tests + 4-ABI build green.
+  See `specs/2026-07-01-android-m7-peripherals.md` and `plans/2026-07-01-android-m7-peripherals.md`.
 - Later milestones are **not yet specced**; the detail here is enough to start each one.
 
 ## Architecture recap (stable across all milestones)
@@ -67,7 +79,7 @@ M1 Foundation ✅
    └─ M2 State & session ✅ ──┬─ M3 Library ✅ ── M4 Settings ✅ ── M5 Color & theme ✅
                              └─ M6 Physical input ✅
    (M2 recommended before others: in-game menu is the host for most later UI)
-M7 Peripherals   — depends on M2 (menu) + M4 (settings toggles)
+M7 Peripherals ✅ — printer feed + Game Boy Camera (Camera2)
 M8 Link cable    — depends on M2 (menu); largest new subsystem
 M9 Ship          — last; depends on everything shippable
 ```
