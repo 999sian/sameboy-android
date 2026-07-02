@@ -17,6 +17,7 @@ struct sb_emulator {
     const atomic_bool *audio_drop;
     const atomic_int *volume;
     double applied_rewind_seconds;  /* cache: GB_set_rewind_length wipes history, so skip if unchanged */
+    GB_palette_t custom_palette;    /* GB_set_palette stores a pointer; keep custom alive here */
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -250,6 +251,25 @@ void sb_emu_apply_settings(sb_emulator *e, const sb_settings *s)
     }
     GB_set_turbo_cap(&e->gb, s->turbo_cap);
     GB_set_interference_volume(&e->gb, s->interference);
+}
+
+void sb_emu_set_palette(sb_emulator *e, int builtin_index, const uint32_t rgb[4])
+{
+    static const GB_palette_t *const builtins[] = {
+        &GB_PALETTE_GREY, &GB_PALETTE_DMG, &GB_PALETTE_MGB, &GB_PALETTE_GBL,
+    };
+    if (builtin_index >= 0 && builtin_index < 4) {
+        GB_set_palette(&e->gb, builtins[builtin_index]);
+        return;
+    }
+    if (!rgb) return;
+    for (int i = 0; i < 4; i++) {
+        e->custom_palette.colors[i].r = (rgb[i] >> 16) & 0xFF;
+        e->custom_palette.colors[i].g = (rgb[i] >> 8) & 0xFF;
+        e->custom_palette.colors[i].b = rgb[i] & 0xFF;
+    }
+    e->custom_palette.colors[4] = e->custom_palette.colors[3];  /* border = lightest */
+    GB_set_palette(&e->gb, &e->custom_palette);
 }
 
 void sb_emu_destroy(sb_emulator *e)

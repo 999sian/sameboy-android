@@ -5,7 +5,8 @@
 #include <string.h>
 #include <Core/gb.h>
 
-/* Build a tiny valid ROM. battery=0: ROM-only, busy loop `inc a`.
+/* Build a tiny valid ROM. battery=0: ROM-only; sets BGP, turns the LCD on
+   (no boot ROM leaves it off => Core paints colors[4]), then busy-loops.
    battery=1: MBC1+RAM+BATTERY (8KB RAM); program enables cart RAM and writes
    one byte to 0xA000, then busy-loops — a single battery-dirtying write. */
 static uint8_t *make_rom(size_t *len, int battery)
@@ -26,7 +27,15 @@ static uint8_t *make_rom(size_t *len, int battery)
         rom[0x149] = 0x02;          /* 8KB cart RAM */
     }
     else {
-        rom[0x150] = 0x3C; rom[0x151] = 0x18; rom[0x152] = 0xFE; /* inc a; jr -2 */
+        static const uint8_t prog[] = {
+            0x3E, 0xE4,             /* ld a, 0xE4   */
+            0xE0, 0x47,             /* ldh (0x47), a ; BGP = 3,2,1,0 */
+            0x3E, 0x91,             /* ld a, 0x91   */
+            0xE0, 0x40,             /* ldh (0x40), a ; LCDC: LCD + BG on */
+            0x3C,                   /* inc a        */
+            0x18, 0xFE,             /* jr -2        */
+        };
+        memcpy(&rom[0x150], prog, sizeof(prog));
         rom[0x147] = 0x00;
         rom[0x149] = 0x00;
     }
@@ -246,6 +255,44 @@ static void test_volume_scale(void)
     free(rom);
 }
 
+static void test_palette(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
+    sb_emulator *e = sb_emu_create(0x002, rom, rlen, NULL, 0);   /* DMG-B: palette applies */
+    assert(e);
+    sb_emu_reset(e);
+    run_frames(e, 2);
+    unsigned w = 0, h = 0;
+    const uint32_t *fb = sb_emu_front_buffer(e, &w, &h);
+    uint32_t grey_px = fb[0];                       /* default GREY: blank screen = colors[3] = white */
+
+    /* built-in DMG (green) recolors */
+    sb_emu_set_palette(e, 1, NULL);
+    run_frames(e, 2);
+    fb = sb_emu_front_buffer(e, &w, &h);
+    assert(fb[0] != grey_px);                        /* recolored */
+    /* fb[0] must be one of the DMG palette's encoded shades (which shade the blank
+       screen maps to depends on BGP; assert membership, not a fixed index). */
+    {
+        static const uint8_t dmg[4][3] = {
+            {0x08,0x18,0x10}, {0x39,0x61,0x39}, {0x84,0xA5,0x63}, {0xC6,0xDE,0x8C} };
+        int match = 0;
+        for (int i = 0; i < 4; i++)
+            if (fb[0] == (0xFF000000u | ((uint32_t)dmg[i][2] << 16) | ((uint32_t)dmg[i][1] << 8) | dmg[i][0])) match = 1;
+        assert(match);
+    }
+
+    /* custom all-red shades */
+    uint32_t red[4] = { 0xFF0000, 0xFF0000, 0xFF0000, 0xFF0000 };
+    sb_emu_set_palette(e, -1, red);
+    run_frames(e, 2);
+    fb = sb_emu_front_buffer(e, &w, &h);
+    assert(fb[0] == (0xFF000000u | (0x00u << 16) | (0x00u << 8) | 0xFFu));  /* pure red */
+
+    sb_emu_destroy(e);
+    free(rom);
+}
+
 int main(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -295,6 +342,7 @@ int main(void)
     test_rom_info();
     test_apply_settings();
     test_volume_scale();
+    test_palette();
     printf("emulator: all tests passed\n");
     return 0;
 }

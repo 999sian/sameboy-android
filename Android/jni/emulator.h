@@ -53,6 +53,9 @@ typedef struct {
     double interference;       /* 0..1 */
 } sb_settings;
 void sb_emu_apply_settings(sb_emulator *e, const sb_settings *s);
+/* builtin_index 0=Grey 1=DMG 2=MGB 3=GBL; -1 => custom from rgb[4] (0x00RRGGBB,
+   index 0 darkest .. 3 lightest). */
+void sb_emu_set_palette(sb_emulator *e, int builtin_index, const uint32_t rgb[4]);
 void sb_emu_set_volume_ptr(sb_emulator *e, const atomic_int *volume);  /* 256 = 1.0; NULL = full */
 
 #define SB_AUDIO_SAMPLE_RATE 48000
