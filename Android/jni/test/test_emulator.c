@@ -203,6 +203,49 @@ static void test_rom_info(void)
     free(rom);
 }
 
+static void test_apply_settings(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
+    sb_emulator *e = sb_emu_create(0x002, rom, rlen, NULL, 0);
+    assert(e);
+    sb_emu_reset(e);
+    sb_settings s = {
+        .color_correction = 3, .light_temperature = 0.5, .border_mode = 2,
+        .highpass = 2, .rtc_mode = 1, .rewind_seconds = 30, .turbo_cap = 2.0,
+        .interference = 0.25,
+    };
+    sb_emu_apply_settings(e, &s);
+    run_frames(e, 10);                 /* still runnable, no crash */
+    unsigned w = 0, h = 0;
+    assert(sb_emu_front_buffer(e, &w, &h) != NULL);
+    sb_emu_destroy(e);
+    free(rom);
+}
+
+static void test_volume_scale(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
+    sb_emulator *e = sb_emu_create(0x002, rom, rlen, NULL, 0);
+    assert(e);
+    sb_emu_reset(e);
+    static atomic_int vol;
+    atomic_init(&vol, 0);              /* silence */
+    sb_emu_set_volume_ptr(e, &vol);
+    static int16_t buf[4096 * 2];
+    int nonzero = 0;
+    for (int i = 0; i < 30; i++) {
+        sb_emu_run_frame(e);
+        size_t got;
+        while ((got = sb_ring_pop(sb_emu_audio_ring(e), buf, 4096)) > 0) {
+            for (size_t j = 0; j < got * 2; j++) if (buf[j] != 0) nonzero++;
+            if (got < 4096) break;
+        }
+    }
+    assert(nonzero == 0);              /* volume 0 => all samples zero */
+    sb_emu_destroy(e);
+    free(rom);
+}
+
 int main(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -250,6 +293,8 @@ int main(void)
     test_battery_dirty();
     test_audio_drop_nonblocking();
     test_rom_info();
+    test_apply_settings();
+    test_volume_scale();
     printf("emulator: all tests passed\n");
     return 0;
 }

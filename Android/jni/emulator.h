@@ -42,4 +42,17 @@ void   sb_emu_clear_battery_dirty(sb_emulator *e);
    -1 if len < 0x150 (too small to be a cartridge). */
 int sb_rom_info(const uint8_t *rom, size_t len, char *title, uint32_t *crc32);
 
+typedef struct {
+    int    color_correction;   /* GB_color_correction_mode_t */
+    double light_temperature;  /* -1..1 */
+    int    border_mode;        /* GB_border_mode_t */
+    int    highpass;           /* GB_highpass_mode_t */
+    int    rtc_mode;           /* GB_rtc_mode_t */
+    double rewind_seconds;
+    double turbo_cap;          /* 0 = uncapped */
+    double interference;       /* 0..1 */
+} sb_settings;
+void sb_emu_apply_settings(sb_emulator *e, const sb_settings *s);
+void sb_emu_set_volume_ptr(sb_emulator *e, const atomic_int *volume);  /* 256 = 1.0; NULL = full */
+
 #define SB_AUDIO_SAMPLE_RATE 48000

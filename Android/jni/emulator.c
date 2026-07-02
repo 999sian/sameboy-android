@@ -15,6 +15,7 @@ struct sb_emulator {
     sb_ring *audio;
     struct { uint8_t *data; size_t len; } boot[SB_BOOT_ROM_COUNT];  /* owned copies */
     const atomic_bool *audio_drop;
+    const atomic_int *volume;
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -38,11 +39,16 @@ static void vblank_cb(GB_gameboy_t *gb, GB_vblank_type_t type)
 static void audio_cb(GB_gameboy_t *gb, GB_sample_t *sample)
 {
     sb_emulator *e = GB_get_user_data(gb);
+    int16_t l = sample->left, r = sample->right;
+    if (e->volume) {
+        int v = atomic_load_explicit(e->volume, memory_order_relaxed);
+        if (v != 256) { l = (int16_t)(l * v / 256); r = (int16_t)(r * v / 256); }
+    }
     if (e->audio_drop && atomic_load_explicit(e->audio_drop, memory_order_relaxed)) {
-        sb_ring_try_push(e->audio, sample->left, sample->right);
+        sb_ring_try_push(e->audio, l, r);
     }
     else {
-        sb_ring_push(e->audio, sample->left, sample->right);
+        sb_ring_push(e->audio, l, r);
     }
 }
 
@@ -221,6 +227,23 @@ int sb_rom_info(const uint8_t *rom, size_t len, char *title, uint32_t *crc32)
     GB_free(gb);
     free(gb);
     return 0;
+}
+
+void sb_emu_set_volume_ptr(sb_emulator *e, const atomic_int *volume)
+{
+    e->volume = volume;
+}
+
+void sb_emu_apply_settings(sb_emulator *e, const sb_settings *s)
+{
+    GB_set_color_correction_mode(&e->gb, (GB_color_correction_mode_t)s->color_correction);
+    GB_set_light_temperature(&e->gb, s->light_temperature);
+    GB_set_border_mode(&e->gb, (GB_border_mode_t)s->border_mode);
+    GB_set_highpass_filter_mode(&e->gb, (GB_highpass_mode_t)s->highpass);
+    GB_set_rtc_mode(&e->gb, (GB_rtc_mode_t)s->rtc_mode);
+    GB_set_rewind_length(&e->gb, s->rewind_seconds);
+    GB_set_turbo_cap(&e->gb, s->turbo_cap);
+    GB_set_interference_volume(&e->gb, s->interference);
 }
 
 void sb_emu_destroy(sb_emulator *e)
