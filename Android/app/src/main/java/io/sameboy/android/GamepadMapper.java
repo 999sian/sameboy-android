@@ -28,7 +28,8 @@ final class GamepadMapper {
         load();
     }
 
-    private void load() {
+    /** (Re)load bindings from prefs — call after they may have changed in another instance. */
+    void load() {
         for (int i = 0; i < KEYS; i++) keycodeFor[i] = p.getInt("gp_" + i, DEFAULTS[i]);
     }
 
@@ -41,8 +42,13 @@ final class GamepadMapper {
     int keycodeFor(int gbKey) { return keycodeFor[gbKey]; }
 
     void setBinding(int gbKey, int keycode) {
+        // A keycode maps to one GB key: clear any other key currently holding it.
+        SharedPreferences.Editor e = p.edit();
+        for (int i = 0; i < KEYS; i++) {
+            if (i != gbKey && keycodeFor[i] == keycode) { keycodeFor[i] = -1; e.putInt("gp_" + i, -1); }
+        }
         keycodeFor[gbKey] = keycode;
-        p.edit().putInt("gp_" + gbKey, keycode).apply();
+        e.putInt("gp_" + gbKey, keycode).apply();
     }
 
     void resetDefaults() {

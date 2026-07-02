@@ -55,7 +55,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private final Runnable rumblePoll = new Runnable() {
         @Override public void run() {
             if (ctx != 0) {
-                int amp = NativeBridge.nativeRumbleAmplitude(ctx);
+                int amp = menuOpen ? 0 : NativeBridge.nativeRumbleAmplitude(ctx);  // paused emu can't zero it
                 driveRumble(amp);
             }
             handler.postDelayed(this, 50);
@@ -63,7 +63,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     };
     private final InputManager.InputDeviceListener padListener = new InputManager.InputDeviceListener() {
         @Override public void onInputDeviceAdded(int id) { refreshOverlayVisibility(); }
-        @Override public void onInputDeviceRemoved(int id) { refreshOverlayVisibility(); }
+        @Override public void onInputDeviceRemoved(int id) { releaseAllKeys(); refreshOverlayVisibility(); }
         @Override public void onInputDeviceChanged(int id) { refreshOverlayVisibility(); }
     };
 
@@ -167,6 +167,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         InputManager im = (InputManager) getSystemService(INPUT_SERVICE);
         if (im != null) im.unregisterInputDeviceListener(padListener);
         if (vibrator != null) { try { vibrator.cancel(); } catch (Exception ignored) {} }
+        releaseAllKeys();
         rumbling = false;
         if (ctx != 0) {
             NativeBridge.nativePause(ctx, true);
@@ -181,6 +182,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             NativeBridge.nativePause(ctx, false);
         }
         handler.postDelayed(batteryPoll, 2000);
+        if (ctx != 0) pad.load();   // pick up remap changes made in GamepadRemapActivity
         InputManager im = (InputManager) getSystemService(INPUT_SERVICE);
         if (im != null) im.registerInputDeviceListener(padListener, handler);
         handler.postDelayed(rumblePoll, 50);
@@ -221,9 +223,15 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 rumbling = true;
             } catch (Exception ignored) {}
         } else if (rumbling) {
-            vibrator.cancel();
+            try { vibrator.cancel(); } catch (Exception ignored) {}
             rumbling = false;
         }
+    }
+
+    /** Release every GB key + clear axis latch (gamepad unplug / pause: no ACTION_UP arrives). */
+    private void releaseAllKeys() {
+        if (ctx != 0) for (int i = 0; i < 8; i++) NativeBridge.nativeSetKey(ctx, i, false);
+        for (int i = 0; i < axisState.length; i++) axisState[i] = false;
     }
 
     private void refreshOverlayVisibility() {
