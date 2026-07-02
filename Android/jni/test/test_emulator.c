@@ -293,6 +293,26 @@ static void test_palette(void)
     free(rom);
 }
 
+static void test_rumble(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
+    sb_emulator *e = sb_emu_create(0x002, rom, rlen, NULL, 0);
+    assert(e);
+    sb_emu_reset(e);
+    assert(sb_emu_rumble_amplitude(e) == 0);          /* nothing yet */
+    sb_settings s = {
+        .color_correction = 2, .light_temperature = 0.0, .border_mode = 0,
+        .highpass = 1, .rtc_mode = 0, .rewind_seconds = 120, .turbo_cap = 0,
+        .interference = 0.0, .rumble_mode = 2,          /* GB_RUMBLE_ALL_GAMES */
+    };
+    sb_emu_apply_settings(e, &s);
+    run_frames(e, 10);                                 /* non-rumble ROM: no crash */
+    int amp = sb_emu_rumble_amplitude(e);
+    assert(amp >= 0 && amp <= 255);
+    sb_emu_destroy(e);
+    free(rom);
+}
+
 int main(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -343,6 +363,7 @@ int main(void)
     test_apply_settings();
     test_volume_scale();
     test_palette();
+    test_rumble();
     printf("emulator: all tests passed\n");
     return 0;
 }

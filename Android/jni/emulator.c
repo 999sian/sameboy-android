@@ -18,6 +18,7 @@ struct sb_emulator {
     const atomic_int *volume;
     double applied_rewind_seconds;  /* cache: GB_set_rewind_length wipes history, so skip if unchanged */
     GB_palette_t custom_palette;    /* GB_set_palette stores a pointer; keep custom alive here */
+    atomic_int rumble_amp;          /* 0..255, latest from rumble_cb */
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -71,6 +72,14 @@ static void boot_rom_cb(GB_gameboy_t *gb, GB_boot_rom_t type)
     /* else: run boot-ROM-less */
 }
 
+static void rumble_cb(GB_gameboy_t *gb, double amplitude)
+{
+    sb_emulator *e = GB_get_user_data(gb);
+    if (amplitude < 0) amplitude = 0;
+    if (amplitude > 1) amplitude = 1;
+    atomic_store(&e->rumble_amp, (int)(amplitude * 255 + 0.5));
+}
+
 sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
                            const uint8_t *sav, size_t sav_len)
 {
@@ -93,6 +102,7 @@ sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
     GB_set_pixels_output(&e->gb, e->buffers[e->back]);
     GB_set_sample_rate(&e->gb, SB_AUDIO_SAMPLE_RATE);
     GB_apu_set_sample_callback(&e->gb, audio_cb);
+    GB_set_rumble_callback(&e->gb, rumble_cb);
 
     GB_load_rom_from_buffer(&e->gb, rom, rom_len);
     if (sav && sav_len) GB_load_battery_from_buffer(&e->gb, sav, sav_len);
@@ -251,6 +261,7 @@ void sb_emu_apply_settings(sb_emulator *e, const sb_settings *s)
     }
     GB_set_turbo_cap(&e->gb, s->turbo_cap);
     GB_set_interference_volume(&e->gb, s->interference);
+    GB_set_rumble_mode(&e->gb, (GB_rumble_mode_t)s->rumble_mode);
 }
 
 void sb_emu_set_palette(sb_emulator *e, int builtin_index, const uint32_t rgb[4])
@@ -270,6 +281,11 @@ void sb_emu_set_palette(sb_emulator *e, int builtin_index, const uint32_t rgb[4]
     }
     e->custom_palette.colors[4] = e->custom_palette.colors[3];  /* border = lightest */
     GB_set_palette(&e->gb, &e->custom_palette);
+}
+
+int sb_emu_rumble_amplitude(sb_emulator *e)
+{
+    return atomic_load(&e->rumble_amp);
 }
 
 void sb_emu_destroy(sb_emulator *e)

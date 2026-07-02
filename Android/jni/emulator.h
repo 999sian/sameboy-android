@@ -51,11 +51,13 @@ typedef struct {
     double rewind_seconds;
     double turbo_cap;          /* 0 = uncapped */
     double interference;       /* 0..1 */
+    int rumble_mode;           /* GB_rumble_mode_t: 0=disabled 1=cart 2=all */
 } sb_settings;
 void sb_emu_apply_settings(sb_emulator *e, const sb_settings *s);
 /* builtin_index 0=Grey 1=DMG 2=MGB 3=GBL; -1 => custom from rgb[4] (0x00RRGGBB,
    index 0 darkest .. 3 lightest). */
 void sb_emu_set_palette(sb_emulator *e, int builtin_index, const uint32_t rgb[4]);
 void sb_emu_set_volume_ptr(sb_emulator *e, const atomic_int *volume);  /* 256 = 1.0; NULL = full */
+int sb_emu_rumble_amplitude(sb_emulator *e);   /* 0..255, latest from the rumble callback */
 
 #define SB_AUDIO_SAMPLE_RATE 48000
