@@ -17,4 +17,13 @@
     <string name="rumble">Rumble</string>
     <string name="gamepad_buttons">Gamepad buttons</string>
     <string name="reset_defaults">Reset to defaults</string>
+    <string name="printer_feed">Printer feed</string>
+    <string name="printer_empty">No printouts yet.</string>
+    <string name="save">Save</string>
+    <string name="share">Share</string>
+    <string name="clear">Clear</string>
+    <string name="saved_to_pictures">Saved to Pictures/SameBoy</string>
+    <string name="connect_accessory">Connect accessory</string>
+    <string name="accessory_none">None</string>
+    <string name="accessory_printer">Game Boy Printer</string>
 </resources>
