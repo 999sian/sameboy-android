@@ -1,4 +1,6 @@
 #include "emulator.h"
+#include "link.h"
+#include <Core/memory.h>
 #include <Core/gb.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +30,7 @@ struct sb_emulator {
     uint8_t         camera_sensor[SB_CAM_W * SB_CAM_H];
     atomic_bool     camera_wanted;   /* consumed by Java poll (exchange) to drive the device camera */
     atomic_bool     camera_pending;  /* a shoot fired; drained on the emu thread next frame to clear busy */
+    struct sb_link *link;            /* M8: serial link bridge; emu-thread + parked-caller only */
 };
 
 static uint32_t rgb_encode(GB_gameboy_t *gb, uint8_t r, uint8_t g, uint8_t b)
@@ -212,6 +215,32 @@ void sb_emu_camera_deliver(sb_emulator *e, const uint8_t *gray)
     pthread_mutex_unlock(&e->camera_mtx);
 }
 
+/* --- Link cable (M8) --- */
+static void link_bit_start_cb(GB_gameboy_t *gb, bool bit) {
+    sb_emulator *e = GB_get_user_data(gb);
+    if (e->link) sb_link_bit_start(e->link, gb, bit);
+}
+static bool link_bit_end_cb(GB_gameboy_t *gb) {
+    sb_emulator *e = GB_get_user_data(gb);
+    return e->link ? sb_link_bit_end(e->link, gb) : true;
+}
+void sb_emu_link_set(sb_emulator *e, struct sb_link *link) {
+    if (!e) { if (link) sb_link_destroy(link); return; }
+    if (e->link) { GB_disconnect_serial(&e->gb); sb_link_destroy(e->link); }
+    e->link = link;
+    if (link) {
+        GB_set_serial_transfer_bit_start_callback(&e->gb, link_bit_start_cb);
+        GB_set_serial_transfer_bit_end_callback(&e->gb, link_bit_end_cb);
+    }
+}
+void sb_emu_link_clear(sb_emulator *e) {
+    if (!e || !e->link) return;
+    GB_disconnect_serial(&e->gb);
+    sb_link_destroy(e->link);
+    e->link = NULL;
+}
+uint8_t sb_emu_peek_sb(sb_emulator *e) { return e ? GB_safe_read_memory(&e->gb, 0xFF01) : 0; }
+
 sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
                            const uint8_t *sav, size_t sav_len)
 {
@@ -271,6 +300,7 @@ void sb_emu_run_frame(sb_emulator *e)
     if (atomic_exchange(&e->camera_pending, false)) {
         GB_camera_updated(&e->gb);
     }
+    if (e->link) sb_link_slave_poll(e->link, &e->gb);
 }
 
 const uint32_t *sb_emu_front_buffer(sb_emulator *e, unsigned *w, unsigned *h)
@@ -436,6 +466,7 @@ int sb_emu_rumble_amplitude(sb_emulator *e)
 void sb_emu_destroy(sb_emulator *e)
 {
     if (!e) return;
+    sb_emu_link_clear(e);
     sb_ring_shutdown(e->audio);
     GB_free(&e->gb);
     sb_ring_destroy(e->audio);

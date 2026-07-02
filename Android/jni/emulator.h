@@ -84,4 +84,10 @@ void    sb_emu_camera_deliver(sb_emulator *e, const uint8_t *gray);   /* SB_CAM_
 void    sb_camera_promote(sb_emulator *e);                    /* staging → sensor under lock */
 uint8_t sb_camera_read(const uint8_t *buf, int x, int y);     /* clamp x∈[0,127] y∈[0,111] */
 
+/* --- Link cable (M8) --- */
+struct sb_link;   /* fwd */
+void sb_emu_link_set(sb_emulator *e, struct sb_link *link);  /* attach (call parked); replaces any old */
+void sb_emu_link_clear(sb_emulator *e);                      /* detach + destroy (call parked) */
+uint8_t sb_emu_peek_sb(sb_emulator *e);   /* test/debug: current SB (0xFF01) */
+
 #define SB_AUDIO_SAMPLE_RATE 48000

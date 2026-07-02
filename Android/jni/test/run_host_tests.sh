@@ -20,11 +20,15 @@ eval cc $CFLAGS test/test_ring_buffer.c ring_buffer.c -lpthread -o /tmp/sb_trb
 /tmp/sb_trb
 
 echo "== emulator =="
-eval cc $CFLAGS test/test_emulator.c emulator.c ring_buffer.c $CORE_SRC -lpthread -lm -o /tmp/sb_temu
+eval cc $CFLAGS test/test_emulator.c emulator.c link.c ring_buffer.c $CORE_SRC -lpthread -lm -o /tmp/sb_temu
 /tmp/sb_temu
 
 echo "== session =="
-eval cc -Itest/shim $CFLAGS test/test_session.c session.c emulator.c ring_buffer.c test/shim_stubs.c $CORE_SRC -lpthread -lm -o /tmp/sb_tses
+eval cc -Itest/shim $CFLAGS test/test_session.c session.c emulator.c link.c ring_buffer.c test/shim_stubs.c $CORE_SRC -lpthread -lm -o /tmp/sb_tses
 /tmp/sb_tses
+
+echo "== link =="
+eval cc $CFLAGS test/test_link.c link.c emulator.c ring_buffer.c $CORE_SRC -lpthread -lm -o /tmp/sb_tlink
+/tmp/sb_tlink
 
 echo "ALL HOST TESTS PASSED"
