@@ -20,6 +20,7 @@ struct sb_session {
     atomic_bool rewinding;      /* consumed by emu loop */
     atomic_bool audio_drop;     /* read by audio_cb via sb_emu_set_audio_drop */
     atomic_bool battery_dirty;  /* published by emu loop, read by JNI */
+    atomic_int volume;          /* 0..256; read by emu audio path */
     int parked;                 /* emu thread is waiting in pause_cv (under pause_mtx) */
     pthread_mutex_t pause_mtx;
     pthread_cond_t pause_cv;
@@ -83,6 +84,8 @@ sb_session *sb_session_create(int model, const uint8_t *rom, size_t rom_len,
     atomic_init(&s->rewinding, false);
     atomic_init(&s->audio_drop, false);
     atomic_init(&s->battery_dirty, false);
+    atomic_init(&s->volume, 256);
+    sb_emu_set_volume_ptr(emu, &s->volume);
     sb_emu_set_audio_drop(emu, &s->audio_drop);
     pthread_mutex_init(&s->pause_mtx, NULL);
     pthread_cond_init(&s->pause_cv, NULL);
@@ -185,6 +188,22 @@ void sb_session_switch_model(sb_session *s, int model)
     int was = park_begin(s);
     sb_emu_switch_model(s->emu, model);
     park_end(s, was);
+}
+
+void sb_session_apply_settings(sb_session *s, const sb_settings *cfg)
+{
+    if (!s) return;
+    int was = park_begin(s);
+    sb_emu_apply_settings(s->emu, cfg);
+    park_end(s, was);
+}
+
+void sb_session_set_volume(sb_session *s, int volume_256)
+{
+    if (!s) return;
+    if (volume_256 < 0) volume_256 = 0;
+    if (volume_256 > 256) volume_256 = 256;
+    atomic_store(&s->volume, volume_256);
 }
 
 void sb_session_copy_frame(sb_session *s, uint32_t *dst, unsigned *w, unsigned *h)

@@ -101,6 +101,17 @@ int main(void)
     sb_session_set_turbo(s, 0);
     sb_session_set_rewinding(s, 0);
 
+    /* apply settings mid-run (self-park) + volume set from the control thread */
+    sb_settings cfg = {
+        .color_correction = 2, .light_temperature = 0.0, .border_mode = 0,
+        .highpass = 1, .rtc_mode = 0, .rewind_seconds = 60, .turbo_cap = 0,
+        .interference = 0.0,
+    };
+    sb_session_apply_settings(s, &cfg);
+    sb_session_set_volume(s, 128);
+    usleep(50 * 1000);
+    sb_session_set_volume(s, 256);
+
     sb_session_stop(s);
     sb_session_destroy(s);
     free(rom);
