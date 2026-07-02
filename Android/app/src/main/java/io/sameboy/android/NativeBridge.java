@@ -37,6 +37,10 @@ public final class NativeBridge {
     public static native void nativePrinterClear(long ctx);
     public static native boolean nativeCameraWanted(long ctx);
     public static native void nativeCameraDeliver(long ctx, byte[] gray);  // 128*112 bytes
+    public static native void nativeLinkListen(long ctx, int port);
+    public static native void nativeLinkConnect(long ctx, String host, int port);
+    public static native void nativeLinkDisconnect(long ctx);
+    public static native int nativeLinkStatus(long ctx);   // 0 idle 1 listen 2 connecting 3 connected 4 error
     public static native int nativeRumbleAmplitude(long ctx);
     public static native void nativeDestroy(long ctx);
 

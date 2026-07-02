@@ -292,6 +292,28 @@ Java_io_sameboy_android_NativeBridge_nativeCameraDeliver(JNIEnv *env, jclass c, 
     (*env)->ReleaseByteArrayElements(env, gray, buf, JNI_ABORT);
 }
 
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeLinkListen(JNIEnv *env, jclass c, jlong ctx, jint port)
+{ (void)env; (void)c; sb_session_link_listen((sb_session *)(uintptr_t)ctx, (int)port); }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeLinkConnect(JNIEnv *env, jclass c, jlong ctx, jstring host, jint port)
+{
+    (void)c;
+    sb_session *s = (sb_session *)(uintptr_t)ctx;
+    const char *h = host ? (*env)->GetStringUTFChars(env, host, NULL) : NULL;
+    sb_session_link_connect(s, h ? h : "", (int)port);
+    if (h) (*env)->ReleaseStringUTFChars(env, host, h);
+}
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeLinkDisconnect(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; sb_session_link_disconnect((sb_session *)(uintptr_t)ctx); }
+
+JNIEXPORT jint JNICALL
+Java_io_sameboy_android_NativeBridge_nativeLinkStatus(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; return (jint)sb_session_link_status((sb_session *)(uintptr_t)ctx); }
+
 JNIEXPORT jint JNICALL
 Java_io_sameboy_android_NativeBridge_nativeRumbleAmplitude(JNIEnv *env, jclass c, jlong ctx)
 { (void)env; (void)c; return sb_session_rumble_amplitude((sb_session *)(uintptr_t)ctx); }
