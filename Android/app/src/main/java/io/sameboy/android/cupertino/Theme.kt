@@ -82,10 +82,14 @@ object Cupertino {
 }
 
 @Composable
-fun CupertinoTheme(content: @Composable () -> Unit) {
+fun CupertinoTheme(fillBackground: Boolean = true, content: @Composable () -> Unit) {
     val colors = if (isSystemInDarkTheme()) Dark else Light
     CompositionLocalProvider(LocalCupertinoColors provides colors) {
-        Box(Modifier.fillMaxSize().background(colors.systemGroupedBackground)) {
+        if (fillBackground) {
+            Box(Modifier.fillMaxSize().background(colors.systemGroupedBackground)) {
+                content()
+            }
+        } else {
             content()
         }
     }

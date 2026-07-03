@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.sameboy.android.cupertino.ActionSheetContent
 import io.sameboy.android.cupertino.CupText
@@ -75,7 +76,7 @@ object GameMenuDialog {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             )
             setContent {
-                CupertinoTheme {
+                CupertinoTheme(fillBackground = false) {
                     MenuContent(
                         h,
                         dismiss = { dialog.dismiss() },
@@ -126,13 +127,13 @@ object GameMenuDialog {
             Screen.Accessory -> {
                 val connected = h.printerConnected()
                 ActionSheetContent(
-                    title = null,
+                    title = stringResource(R.string.connect_accessory),
                     actions = listOf(
                         SheetAction(
-                            (if (!connected) "\u2713 " else "") + "None",
+                            (if (!connected) "\u2713 " else "") + stringResource(R.string.accessory_none),
                         ) { h.onConnectAccessory(0); dismiss() },
                         SheetAction(
-                            (if (connected) "\u2713 " else "") + "Game Boy Printer",
+                            (if (connected) "\u2713 " else "") + stringResource(R.string.accessory_printer),
                         ) { h.onConnectAccessory(1); dismiss() },
                     ),
                     cancelLabel = "Cancel",
