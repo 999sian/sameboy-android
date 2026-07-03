@@ -4,11 +4,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +25,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -207,7 +208,7 @@ fun CupertinoSlider(value: Float, onValueChange: (Float) -> Unit, modifier: Modi
             .onSizeChanged { widthPx = it.width.toFloat() }
             .pointerInput(Unit) { detectTapGestures { set(it.x) } }
             .pointerInput(Unit) {
-                detectDragGestures { change, _ -> change.consume(); set(change.position.x) }
+                detectHorizontalDragGestures { change, _ -> change.consume(); set(change.position.x) }
             },
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -262,7 +263,12 @@ fun PickerRow(label: String, options: List<String>, selected: Int, onSelect: (In
 
 // ---------- action sheet ----------
 
-class SheetAction(val label: String, val destructive: Boolean = false, val onClick: () -> Unit)
+class SheetAction(
+    val label: String,
+    val destructive: Boolean = false,
+    val dismisses: Boolean = true,
+    val onClick: () -> Unit,
+)
 
 @Composable
 private fun SheetButton(label: String, color: Color, weight: FontWeight, onClick: () -> Unit) {
@@ -306,7 +312,7 @@ fun ActionSheetContent(
                     a.label,
                     if (a.destructive) Cupertino.colors.systemRed else Cupertino.colors.systemBlue,
                     FontWeight.Normal,
-                ) { a.onClick(); onDismiss() }
+                ) { a.onClick(); if (a.dismisses) onDismiss() }
                 if (i < actions.lastIndex) {
                     Box(Modifier.fillMaxWidth().height(0.5.dp).background(Cupertino.colors.separator))
                 }
@@ -358,7 +364,7 @@ fun CupertinoAlertShell(
                 title, Cupertino.type.headline,
                 modifier = Modifier.padding(16.dp).fillMaxWidth(),
             )
-            content()
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { content() }
             Box(Modifier.fillMaxWidth().height(0.5.dp).background(Cupertino.colors.separator))
             Row(Modifier.fillMaxWidth()) {
                 buttons.forEachIndexed { i, b ->
@@ -411,7 +417,7 @@ fun CupertinoButton(
         Modifier
             .alpha(if (pressed) 0.5f else 1f)
             .clip(RoundedCornerShape(50))
-            .background(if (enabled) bg else Cupertino.colors.fill)
+            .background(if (enabled) bg else if (style == ButtonStyle.Plain) Color.Transparent else Cupertino.colors.fill)
             .clickable(interaction, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,

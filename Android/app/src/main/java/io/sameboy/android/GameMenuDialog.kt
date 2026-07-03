@@ -101,11 +101,11 @@ object GameMenuDialog {
             Screen.Menu -> ActionSheetContent(
                 title = "SameBoy",
                 actions = listOf(
-                    SheetAction("Save state") { screen = Screen.SaveSlots },
-                    SheetAction("Load state") { screen = Screen.LoadSlots },
+                    SheetAction("Save state", dismisses = false) { screen = Screen.SaveSlots },
+                    SheetAction("Load state", dismisses = false) { screen = Screen.LoadSlots },
                     SheetAction("Reset") { h.onResetGame(); dismiss() },
-                    SheetAction("Model") { screen = Screen.Models },
-                    SheetAction("Connect accessory") { screen = Screen.Accessory },
+                    SheetAction("Model", dismisses = false) { screen = Screen.Models },
+                    SheetAction("Connect accessory", dismisses = false) { screen = Screen.Accessory },
                     SheetAction("Printer feed") { h.onPrinterFeed(); takeOver() },
                     SheetAction("Link cable") { h.onLinkCable(); takeOver() },
                     SheetAction("Settings") { h.onOpenSettings(); takeOver() },
