@@ -44,22 +44,32 @@ final class GBLayout {
             turbo.set(start.x, rewind.y);
             menu.set(w - 40f * dp, 40f * dp);
         } else {
-            // width-filling integer-scaled screen, top-anchored
+            // width-filling integer-scaled screen, top-anchored.
+            // Short screens (h < ~700dp): shrink by integer steps until the d-pad
+            // clears the screen well (landscape has the same loop; iOS portrait
+            // never needed it because no iPhone is this short).
             float sw = (float) Math.floor(w / 160f) * 160f;
             if (sw == 0) sw = w;
-            float sh = sw / 160f * 144f;
-            float border = Math.min(sw / 40f, 16f * dp);
-            float topInset = Math.min(border * 2f, 20f * dp);
+            float sh, border, topInset, y, controlAreaStart, selectY, dpadY;
+            while (true) {
+                sh = sw / 160f * 144f;
+                border = Math.min(sw / 40f, 16f * dp);
+                topInset = Math.min(border * 2f, 20f * dp);
+                y = topInset + 24f * dp;               // status-bar breathing room
+                controlAreaStart = y + sh + topInset;
+                selectY = Math.min(h - 80f * dp, (h - controlAreaStart) * 0.75f + controlAreaStart);
+                dpadY = selectY - 140f * dp;
+                // d-pad sprite is 151dp tall; keep its top clear of the bezel
+                if (dpadY - 78f * dp >= y + sh + border || sw <= 160f) break;
+                sw -= 160f;
+            }
             float x = (w - sw) / 2f;
-            float y = topInset + 24f * dp;             // status-bar breathing room
             screenRect.set(x, y, x + sw, y + sh);
             bezelWidth = border;
 
-            float controlAreaStart = screenRect.bottom + topInset;
-            select.set(Math.min(w / 4f, 120f * dp),
-                       Math.min(h - 80f * dp, (h - controlAreaStart) * 0.75f + controlAreaStart));
+            select.set(Math.min(w / 4f, 120f * dp), selectY);
             start.set(w - select.x, select.y);
-            dpad.set(select.x, select.y - 140f * dp);
+            dpad.set(select.x, dpadY);
             float buttonsCx = w - dpad.x;
             PointF delta = buttonDelta(w / 2f - 36f * dp * 2f - border * 2f, dp);
             a.set(Math.round(buttonsCx + delta.x / 2f), Math.round(dpad.y - delta.y / 2f));
