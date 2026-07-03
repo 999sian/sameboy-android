@@ -1,4 +1,8 @@
-plugins { id "com.android.application" }
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "org.jetbrains.kotlin.plugin.compose"
+}
 
 // Read VERSION from repo-root version.mk (e.g. "1.0.3")
 def sameboyVersion = file("${rootDir}/../version.mk").readLines()
@@ -34,6 +38,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose true }
     signingConfigs {
         if (hasReleaseKey) {
             release {
@@ -59,13 +65,15 @@ android {
 
 dependencies {
     implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation platform("androidx.compose:compose-bom:2024.09.03")
+    implementation "androidx.compose.foundation:foundation"
+    implementation "androidx.activity:activity-compose:1.9.2"
 
-    // appcompat 1.7.0 pulls coroutines 1.6.4 -> kotlin-stdlib-jdk7/jdk8:1.6.21, whose
-    // classes were folded into kotlin-stdlib (1.8.22 here) at 1.8.0, causing duplicate
-    // classes. Align the stub artifacts to the resolved stdlib version.
+    // kotlin-stdlib-jdk7/jdk8 classes were folded into kotlin-stdlib at 1.8.0;
+    // align the stub artifacts to the resolved stdlib (now 2.0.21 via Kotlin plugin).
     constraints {
-        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22")
-        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22")
+        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.0.21")
+        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21")
     }
 }
 
