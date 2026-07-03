@@ -1,8 +1,18 @@
 plugins { id "com.android.application" }
 
-// Read VERSION from repo-root version.mk (e.g. "1.0.1")
+// Read VERSION from repo-root version.mk (e.g. "1.0.3")
 def sameboyVersion = file("${rootDir}/../version.mk").readLines()
         .find { it.startsWith("VERSION") }?.split(":=")?.last()?.trim() ?: "0.0.0"
+// Derive a monotonic integer versionCode from the semver (1.0.3 -> 10003).
+def sameboyVersionCode = {
+    def m = (sameboyVersion =~ /(\d+)\.(\d+)\.(\d+)/)
+    m ? m[0][1].toInteger() * 10000 + m[0][2].toInteger() * 100 + m[0][3].toInteger() : 1
+}()
+
+// Release signing from env (CI secrets / local export); never commit a keystore. Falls back
+// to the debug key when unset so assembleRelease always produces an installable APK.
+def ksPath = System.getenv("SAMEBOY_KEYSTORE")
+def hasReleaseKey = ksPath && file(ksPath).exists()
 
 android {
     namespace "io.sameboy.android"
@@ -12,7 +22,7 @@ android {
         applicationId "io.sameboy.android"
         minSdk 26
         targetSdk 34
-        versionCode 1
+        versionCode sameboyVersionCode
         versionName sameboyVersion
         ndk { abiFilters "arm64-v8a", "armeabi-v7a", "x86_64", "x86" }
     }
@@ -24,9 +34,26 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(System.getenv("SAMEBOY_KEYSTORE"))
+                storePassword System.getenv("SAMEBOY_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("SAMEBOY_KEY_ALIAS")
+                keyPassword System.getenv("SAMEBOY_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         debug { debuggable true }
-        release { minifyEnabled false }
+        release {
+            // name-based JNI binding => keep NativeBridge + native methods (proguard-rules.pro)
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // real key if provided, else debug key so the APK still installs (not for store upload)
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+        }
     }
 }
 
@@ -57,8 +84,14 @@ tasks.register("generateBootRoms") {
         def home = System.getProperty("user.home")
         def sysPath = System.getenv('PATH') ?: ''
         def path = "${home}/.local/bin:${sysPath}".toString()
-        if (!path.split(':').any { new File(it, 'rgbasm').canExecute() }) {
-            logger.warn("rgbds not found on PATH; skipping boot ROM generation. App will run boot-ROM-less.")
+        def dirs = path.split(':').findAll { it }   // drop empty PATH entries ("" -> new File("",x))
+        // Require the FULL rgbds toolchain, not just rgbasm — a partial install would make
+        // `make bootroms` fail loudly mid-build; skip gracefully (boot-ROM-less) instead.
+        def haveRgbds = ['rgbasm', 'rgblink', 'rgbgfx', 'rgbfix'].every { exe ->
+            dirs.any { new File(it, exe).canExecute() }
+        }
+        if (!haveRgbds) {
+            logger.warn("rgbds toolchain not fully found on PATH; skipping boot ROM generation. App will run boot-ROM-less.")
             return
         }
         def pb = new ProcessBuilder('make', 'bootroms')
