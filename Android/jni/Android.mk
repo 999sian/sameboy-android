@@ -20,4 +20,7 @@ LOCAL_CFLAGS    := -std=gnu11 -DGB_INTERNAL -DGB_DISABLE_DEBUGGER \
                    -DGB_VERSION=\"$(VERSION)\" -D_GNU_SOURCE \
                    -Wno-multichar -O2 -fvisibility=hidden
 LOCAL_LDLIBS    := -landroid -lEGL -lGLESv2 -laaudio -llog
+# 16 KB page alignment: Android 15+ / Play require .so LOAD segments 16 KB-aligned.
+# NDK r26 (ndkVersion here) still defaults to 4 KB, so request it explicitly.
+LOCAL_LDFLAGS   := -Wl,-z,max-page-size=16384
 include $(BUILD_SHARED_LIBRARY)
