@@ -4,18 +4,10 @@ import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.Button;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -52,42 +44,12 @@ public final class PrinterFeedActivity extends AppCompatActivity {
         if (ctx == 0) { finish(); return; }
         bitmap = buildBitmap();
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.BLACK);
-
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        Button save = new Button(this);  save.setText(R.string.save);
-        Button share = new Button(this); share.setText(R.string.share);
-        Button clear = new Button(this); clear.setText(R.string.clear);
-        bar.addView(save); bar.addView(share); bar.addView(clear);
-        root.addView(bar);
-
-        ScrollView scroll = new ScrollView(this);
-        if (bitmap != null) {
-            ImageView iv = new ImageView(this);
-            iv.setImageBitmap(bitmap);
-            iv.setAdjustViewBounds(true);
-            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            scroll.addView(iv);
-        } else {
-            TextView tv = new TextView(this);
-            tv.setText(R.string.printer_empty);
-            tv.setTextColor(Color.WHITE);
-            tv.setGravity(Gravity.CENTER);
-            tv.setPadding(0, 64, 0, 0);
-            scroll.addView(tv);
-        }
-        root.addView(scroll, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        setContentView(root);
-
-        boolean has = bitmap != null;
-        save.setEnabled(has); share.setEnabled(has);
-        save.setOnClickListener(v -> saveToPictures());
-        share.setOnClickListener(v -> sharePng());
-        clear.setOnClickListener(v -> { NativeBridge.nativePrinterClear(ctx); finish(); });
+        PrinterUi.bind(this, bitmap, new PrinterUi.Callbacks() {
+            @Override public void onSave() { saveToPictures(); }
+            @Override public void onShare() { sharePng(); }
+            @Override public void onClear() { NativeBridge.nativePrinterClear(ctx); finish(); }
+            @Override public void onBack() { finish(); }
+        });
     }
 
     private Bitmap buildBitmap() {
