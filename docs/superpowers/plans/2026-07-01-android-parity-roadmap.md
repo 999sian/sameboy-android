@@ -1,6 +1,6 @@
 # SameBoy Android — Full-Parity Program Roadmap
 
-Status: **living plan** · Date: 2026-07-01 · Branch: `android-frontend`
+Status: **COMPLETE — M1–M9 all done & on-device verified** · Date: 2026-07-01 · Branch: `android-frontend`
 
 The goal is a native Android app with feature parity to the existing native `iOS/`
 app, reusing the C `Core` unmodified through a JNI bridge, app layer in Java. The work
@@ -62,7 +62,17 @@ key decisions, dependencies, and acceptance.
   fix + Error recovery. A real two-game trade needs a link ROM + two synced instances (out of
   this slice; Bluetooth is a later slice). Host tests + 4-ABI build green. See
   `specs/2026-07-01-android-m8-link-cable.md` and `plans/2026-07-01-android-m8-link-cable.md`.
-- Later milestones are **not yet specced**; the detail here is enough to start each one.
+- **M9 (Ship) is DONE and on-device verified** (Waydroid x86_64 + a physical arm64 device) —
+  R8 release build + env-based signing (debug fallback), `versionCode`/`versionName` from
+  `version.mk` (1.0.3 → 10003), an adaptive launcher icon (the SameBoy DMG art), rgbds
+  toolchain-gate hardening, and a GitHub Actions workflow building all four ABIs with a 16 KB
+  page-alignment guard. The R8 release APK runs on both ABIs (name-based JNI kept). Real
+  hardware also surfaced + fixed a 16 KB-alignment ship blocker (`-Wl,-z,max-page-size=16384`).
+  See `specs/2026-07-01-android-m9-ship.md` and `plans/2026-07-01-android-m9-ship.md`.
+- **All milestones M1–M9 are complete and on-device verified.** Documented follow-ups
+  (non-blocking): Bluetooth link (M8 later slice), a portrait-optimized large-screen layout,
+  AAudio device-disconnect handling, and hardware-gated checks (rumble motor, GB Camera live
+  capture, a same-LAN two-instance link trade).
 
 ## Architecture recap (stable across all milestones)
 
@@ -94,7 +104,7 @@ M1 Foundation ✅
    (M2 recommended before others: in-game menu is the host for most later UI)
 M7 Peripherals ✅ — printer feed + Game Boy Camera (Camera2)
 M8 Link cable ✅ — TCP serial bridge (byte-level master/slave); Bluetooth = later slice
-M9 Ship          — last; depends on everything shippable
+M9 Ship ✅ — R8 release + env signing, versionCode from version.mk, adaptive icon, GitHub Actions CI (4 ABIs + 16 KB guard)
 ```
 
 Recommended order: **M2 → M3 → M4 → M5 → M6 → M7 → M8 → M9.** M2 first because the
@@ -271,7 +281,7 @@ graceful disconnect. This milestone may itself split into sub-slices.
 
 ---
 
-## M9 — Ship
+## M9 — Ship ✅ DONE
 
 **Goal:** Release-ready packaging and CI.
 
