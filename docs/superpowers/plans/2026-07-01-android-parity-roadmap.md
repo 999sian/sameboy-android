@@ -49,6 +49,19 @@ key decisions, dependencies, and acceptance.
   camera poller on a non-camera ROM. Printout *content* needs a printing ROM; camera
   viewfinder/photo need a Game Boy Camera ROM + real camera. Host tests + 4-ABI build green.
   See `specs/2026-07-01-android-m7-peripherals.md` and `plans/2026-07-01-android-m7-peripherals.md`.
+- **M8 (Link cable) is DONE and on-device verified** (Waydroid, x86_64) — TCP link over the
+  local network with a byte-level master/slave serial bridge clocked off Core's serial
+  callbacks (master reads the whole SB at the first `bit_start`, sends it, blocking-recvs the
+  peer byte with a dead-latch timeout, feeds it back through the 8 `bit_end`s; slave polled
+  per-frame drives `GB_serial_set_data_bit`×8). Pluggable transport (loopback for tests +
+  TCP); connect/listen run cancellable on a helper thread and attach parked at a frame
+  boundary; `LinkActivity` Host/Join/Disconnect with a live status FSM. A whole-branch review
+  caught an accept()-join ANR + three more concurrency/robustness bugs, all fixed. Verified:
+  the two-core loopback host test swaps a byte both ways (clocking proven), a localhost-TCP
+  smoke, and on-device Host→Listening→(external peer)→Connected + the no-peer Disconnect ANR
+  fix + Error recovery. A real two-game trade needs a link ROM + two synced instances (out of
+  this slice; Bluetooth is a later slice). Host tests + 4-ABI build green. See
+  `specs/2026-07-01-android-m8-link-cable.md` and `plans/2026-07-01-android-m8-link-cable.md`.
 - Later milestones are **not yet specced**; the detail here is enough to start each one.
 
 ## Architecture recap (stable across all milestones)
@@ -80,7 +93,7 @@ M1 Foundation ✅
                              └─ M6 Physical input ✅
    (M2 recommended before others: in-game menu is the host for most later UI)
 M7 Peripherals ✅ — printer feed + Game Boy Camera (Camera2)
-M8 Link cable    — depends on M2 (menu); largest new subsystem
+M8 Link cable ✅ — TCP serial bridge (byte-level master/slave); Bluetooth = later slice
 M9 Ship          — last; depends on everything shippable
 ```
 
