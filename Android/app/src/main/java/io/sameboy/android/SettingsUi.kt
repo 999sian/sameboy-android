@@ -84,6 +84,8 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
     var haptics by remember { mutableStateOf(s.haptics()) }
     var rumble by remember { mutableIntStateOf(s.rumbleMode()) }
     var theme by remember { mutableIntStateOf(s.themeMode()) }
+    var console by remember { mutableIntStateOf(s.consoleTheme()) }
+    var swipeDpad by remember { mutableStateOf(s.swipeDpad()) }
 
     ReadableContent {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -158,6 +160,7 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
                 }
             },
             { ToggleRow("Haptics", haptics) { haptics = it; s.setHaptics(it) } },
+            { ToggleRow("Swipe d-pad", swipeDpad) { swipeDpad = it; s.setSwipeDpad(it) } },
             {
                 PickerRow(
                     stringResource(R.string.rumble),
@@ -171,6 +174,11 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
             {
                 PickerRow(stringResource(R.string.theme), listOf("System", "Light", "Dark"), theme) {
                     theme = it; s.setThemeMode(it); s.applyTheme()
+                }
+            },
+            {
+                PickerRow("Console", listOf("SameBoy", "SameBoy Dark", "Follow theme"), console) {
+                    console = it; s.setConsoleTheme(it)
                 }
             },
         ))

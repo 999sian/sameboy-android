@@ -30,6 +30,8 @@ final class Settings {
     private static final String K_CUSTOM3 = "palette_custom3";
     private static final String K_THEME = "theme_mode";             // 0 System,1 Light,2 Dark
     private static final String K_RUMBLE = "rumble_mode";  // 0 disabled,1 cartridge,2 all
+    private static final String K_CONSOLE = "console_theme";        // 0 SameBoy,1 Dark,2 Follow theme
+    private static final String K_SWIPE_DPAD = "swipe_dpad";        // bool
 
     // default custom = greyscale shades (darkest..lightest)
     private static final int[] CUSTOM_DEFAULT = { 0x000000, 0x555555, 0xAAAAAA, 0xFFFFFF };
@@ -86,6 +88,20 @@ final class Settings {
     float buttonOpacity() { return buttonOpacityPct() / 100f; }
     int rumbleMode()          { return p.getInt(K_RUMBLE, 1); }
     void setRumbleMode(int v) { p.edit().putInt(K_RUMBLE, v).apply(); }
+    int consoleTheme()          { return p.getInt(K_CONSOLE, 2); }
+    void setConsoleTheme(int v) { p.edit().putInt(K_CONSOLE, v).apply(); }
+    boolean swipeDpad()         { return p.getBoolean(K_SWIPE_DPAD, false); }
+    void setSwipeDpad(boolean v){ p.edit().putBoolean(K_SWIPE_DPAD, v).apply(); }
+
+    /** Resolved console skin: true = dark body/buttons. Mode 2 follows the app theme. */
+    boolean consoleIsDark(android.content.Context ctx) {
+        int mode = consoleTheme();
+        if (mode == 0) return false;
+        if (mode == 1) return true;
+        int night = ctx.getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return night == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
 
     /** Push every Core-backed setting + volume to a running session. */
     void apply(long ctx) {
