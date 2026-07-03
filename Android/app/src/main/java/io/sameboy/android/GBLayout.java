@@ -12,6 +12,7 @@ final class GBLayout {
     final PointF select = new PointF(), start = new PointF();
     final PointF rewind = new PointF(), turbo = new PointF(), menu = new PointF();
     final boolean landscape;
+    boolean compact = false;
     boolean drawLogo = false;
     float logoY, logoSize;
 
@@ -44,10 +45,11 @@ final class GBLayout {
             turbo.set(start.x, rewind.y);
             menu.set(w - 40f * dp, 40f * dp);
         } else {
-            // width-filling integer-scaled screen, top-anchored.
-            // Short screens (h < ~700dp): shrink by integer steps until the d-pad
-            // clears the screen well (landscape has the same loop; iOS portrait
-            // never needed it because no iPhone is this short).
+            // Width-filling integer-scaled screen, top-anchored. Two-pass fit:
+            // 1) roomy iOS spacing (tall phones/tablets); 2) compact spacing for
+            // short screens (menu pill moves top-right, rewind/turbo under
+            // select/start, tighter gaps) — keeps the largest possible screen.
+            // Only if even compact overflows does the screen shrink a step.
             float sw = (float) Math.floor(w / 160f) * 160f;
             if (sw == 0) sw = w;
             float sh, border, topInset, y, controlAreaStart, selectY, dpadY;
@@ -57,10 +59,16 @@ final class GBLayout {
                 topInset = Math.min(border * 2f, 20f * dp);
                 y = topInset + 24f * dp;               // status-bar breathing room
                 controlAreaStart = y + sh + topInset;
+                float wellClear = y + sh + border;
+                // pass 1: roomy (iOS formulas)
                 selectY = Math.min(h - 80f * dp, (h - controlAreaStart) * 0.75f + controlAreaStart);
                 dpadY = selectY - 140f * dp;
-                // d-pad sprite is 151dp tall; keep its top clear of the bezel
-                if (dpadY - 78f * dp >= y + sh + border || sw <= 160f) break;
+                if (dpadY - 84f * dp >= wellClear || sw <= 160f) { compact = false; break; }
+                // pass 2: compact — pack the stack right under the well
+                dpadY = wellClear + 84f * dp;          // d-pad half (76dp) + 8dp gap
+                selectY = dpadY + 122f * dp;
+                float rewindY = selectY + 56f * dp;
+                if (rewindY <= h - 20f * dp || sw <= 160f) { compact = true; break; }
                 sw -= 160f;
             }
             float x = (w - sw) / 2f;
@@ -79,11 +87,19 @@ final class GBLayout {
             if (controlsTop - controlAreaStart > 24f * dp + border * 2f) {
                 drawLogo = true; logoSize = 24f * dp; logoY = controlAreaStart + border;
             }
-            // [<<] [=] [>>] pill row centered between Select and Start
-            float pillY = Math.min(h - 24f * dp, select.y + 56f * dp);
-            rewind.set(w / 2f - 64f * dp, pillY);
-            menu.set(w / 2f, pillY);
-            turbo.set(w / 2f + 64f * dp, pillY);
+            if (compact) {
+                // menu pill centered between Select and Start; rewind/turbo below them
+                menu.set(w / 2f, selectY);
+                float pillY = Math.min(h - 20f * dp, select.y + 56f * dp);
+                rewind.set(select.x, pillY);
+                turbo.set(start.x, pillY);
+            } else {
+                // [<<] [=] [>>] pill row centered between Select and Start
+                float pillY = Math.min(h - 24f * dp, select.y + 56f * dp);
+                rewind.set(w / 2f - 64f * dp, pillY);
+                menu.set(w / 2f, pillY);
+                turbo.set(w / 2f + 64f * dp, pillY);
+            }
         }
     }
 

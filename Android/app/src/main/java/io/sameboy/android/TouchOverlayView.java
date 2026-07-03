@@ -320,8 +320,9 @@ class TouchOverlayView extends View {
         if (!controlsHidden) {
             drawRotatedLabel(c, "A", layout.a, 24f * dp, 40f * dp, Typeface.DEFAULT_BOLD);
             drawRotatedLabel(c, "B", layout.b, 24f * dp, 40f * dp, Typeface.DEFAULT_BOLD);
-            drawRotatedLabel(c, "SELECT", layout.select, 14f * dp, 30f * dp, Typeface.DEFAULT_BOLD);
-            drawRotatedLabel(c, "START", layout.start, 14f * dp, 30f * dp, Typeface.DEFAULT_BOLD);
+            float selDist = (layout.compact ? 22f : 30f) * dp;   // clear the pills below in compact
+            drawRotatedLabel(c, "SELECT", layout.select, 14f * dp, selDist, Typeface.DEFAULT_BOLD);
+            drawRotatedLabel(c, "START", layout.start, 14f * dp, selDist, Typeface.DEFAULT_BOLD);
         }
 
         // controls layer (respects opacity setting)
