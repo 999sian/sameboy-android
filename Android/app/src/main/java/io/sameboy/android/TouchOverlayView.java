@@ -45,18 +45,79 @@ class TouchOverlayView extends View {
     private float opacity = 0.6f;
     private boolean haptics = true;
     private boolean controlsHidden = false;
+    private boolean darkConsole = false;
+    private boolean swipePad = false;
+    private int bodyTop = BODY_TOP, bodyBottom = BODY_BOTTOM;
+    private int swipePointerId = -1;
+    private float swipeOriginX, swipeOriginY;
 
     TouchOverlayView(Context ctx, ControlListener l, ScreenRectListener r) {
         super(ctx);
         listener = l;
         rectListener = r;
-        dpadBmp = BitmapFactory.decodeResource(getResources(), R.drawable.gb_dpad);
-        dpadShadow = BitmapFactory.decodeResource(getResources(), R.drawable.gb_dpad_shadow);
-        dpadShadowDiag = BitmapFactory.decodeResource(getResources(), R.drawable.gb_dpad_shadow_diag);
-        buttonBmp = BitmapFactory.decodeResource(getResources(), R.drawable.gb_button);
-        buttonPressedBmp = BitmapFactory.decodeResource(getResources(), R.drawable.gb_button_pressed);
-        button2Bmp = BitmapFactory.decodeResource(getResources(), R.drawable.gb_button2);
-        button2PressedBmp = BitmapFactory.decodeResource(getResources(), R.drawable.gb_button2_pressed);
+        loadSprites();
+    }
+
+    private Bitmap res(int id) { return BitmapFactory.decodeResource(getResources(), id); }
+
+    /** iOS GBTheme._recolorImage: ColorMatrix rows [c*1.34, 1-c, 0, 0, 0] over purple-hued art. */
+    private Bitmap recolor(Bitmap src, int color) {
+        float r = ((color >> 16) & 0xFF) / 255f, g = ((color >> 8) & 0xFF) / 255f, b = (color & 0xFF) / 255f;
+        android.graphics.ColorMatrix m = new android.graphics.ColorMatrix(new float[] {
+            r * 1.34f, 1 - r, 0, 0, 0,
+            g * 1.34f, 1 - g, 0, 0, 0,
+            b * 1.34f, 1 - b, 0, 0, 0,
+            0, 0, 0, 1, 0,
+        });
+        Bitmap out = Bitmap.createBitmap(src.getWidth(), src.getHeight(), Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        p.setColorFilter(new android.graphics.ColorMatrixColorFilter(m));
+        c.drawBitmap(src, 0, 0, p);
+        return out;
+    }
+
+    private static final int DARK_BUTTON = 0xFF080C12;
+    private static final int DARK_BODY_TOP = 0xFF181C23;
+
+    private void loadSprites() {
+        dpadShadow = res(swipePad ? R.drawable.gb_swipepad_shadow : R.drawable.gb_dpad_shadow);
+        dpadShadowDiag = res(swipePad ? R.drawable.gb_swipepad_shadow_diag : R.drawable.gb_dpad_shadow_diag);
+        if (darkConsole) {
+            dpadBmp = recolor(res(swipePad ? R.drawable.gb_swipepad_tint : R.drawable.gb_dpad_tint), DARK_BUTTON);
+            buttonBmp = recolor(res(R.drawable.gb_button), DARK_BUTTON);
+            buttonPressedBmp = recolor(res(R.drawable.gb_button_pressed), DARK_BUTTON);
+            button2Bmp = recolor(res(R.drawable.gb_button2_tint), DARK_BUTTON);
+            button2PressedBmp = recolor(res(R.drawable.gb_button2_pressed_tint), DARK_BUTTON);
+            bodyTop = DARK_BODY_TOP;
+            bodyBottom = darkenPow(DARK_BODY_TOP);
+        } else {
+            dpadBmp = res(swipePad ? R.drawable.gb_swipepad : R.drawable.gb_dpad);
+            buttonBmp = res(R.drawable.gb_button);
+            buttonPressedBmp = res(R.drawable.gb_button_pressed);
+            button2Bmp = res(R.drawable.gb_button2);
+            button2PressedBmp = res(R.drawable.gb_button2_pressed);
+            bodyTop = BODY_TOP;
+            bodyBottom = BODY_BOTTOM;
+        }
+    }
+
+    /** iOS setupBackgroundWithColor: bottom = pow(c/255, 1.125) per channel. */
+    private static int darkenPow(int color) {
+        int r = (int) (Math.pow(((color >> 16) & 0xFF) / 255.0, 1.125) * 255);
+        int g = (int) (Math.pow(((color >> 8) & 0xFF) / 255.0, 1.125) * 255);
+        int b = (int) (Math.pow((color & 0xFF) / 255.0, 1.125) * 255);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    void setConsoleTheme(boolean dark) {
+        if (dark == darkConsole) return;
+        darkConsole = dark; loadSprites(); invalidate();
+    }
+
+    void setSwipePad(boolean on) {
+        if (on == swipePad) return;
+        swipePad = on; loadSprites(); invalidate();
     }
 
     void setOpacity(float a) { opacity = a; invalidate(); }
@@ -88,17 +149,29 @@ class TouchOverlayView extends View {
         float dx = x - layout.dpad.x, dy = y - layout.dpad.y;
         float half = 92f * dp;                          // generous dpad square
         if (Math.abs(dx) < half && Math.abs(dy) < half) {
-            if (dist2(x, y, layout.dpad) < sq(14f * dp)) return 0;   // dead center
-            int m = 0;
-            double ang = Math.toDegrees(Math.atan2(-dy, dx));        // 0=right, CCW
-            if (ang < 0) ang += 360;
-            if (ang < 67.5 || ang > 292.5) m |= 1 << NativeBridge.KEY_RIGHT;
-            if (ang > 112.5 && ang < 247.5) m |= 1 << NativeBridge.KEY_LEFT;
-            if (ang > 22.5 && ang < 157.5) m |= 1 << NativeBridge.KEY_UP;
-            if (ang > 202.5 && ang < 337.5) m |= 1 << NativeBridge.KEY_DOWN;
-            return m;
+            if (swipePad) return 0;                     // swipe mode: onTouchEvent owns the pad
+            return sectorMask(dx, dy, 14f * dp);        // 14dp dead center
         }
         return 0;
+    }
+
+    /** 8-way sector mask for an offset from the pad anchor; 0 inside the dead zone. */
+    private int sectorMask(float dx, float dy, float deadZonePx) {
+        if (dx * dx + dy * dy < deadZonePx * deadZonePx) return 0;
+        int m = 0;
+        double ang = Math.toDegrees(Math.atan2(-dy, dx));        // 0=right, CCW
+        if (ang < 0) ang += 360;
+        if (ang < 67.5 || ang > 292.5) m |= 1 << NativeBridge.KEY_RIGHT;
+        if (ang > 112.5 && ang < 247.5) m |= 1 << NativeBridge.KEY_LEFT;
+        if (ang > 22.5 && ang < 157.5) m |= 1 << NativeBridge.KEY_UP;
+        if (ang > 202.5 && ang < 337.5) m |= 1 << NativeBridge.KEY_DOWN;
+        return m;
+    }
+
+    private boolean inDpadSquare(float x, float y) {
+        if (layout == null) return false;
+        float half = 92f * dp;
+        return Math.abs(x - layout.dpad.x) < half && Math.abs(y - layout.dpad.y) < half;
     }
 
     private static float sq(float v) { return v * v; }
@@ -146,23 +219,50 @@ class TouchOverlayView extends View {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN: {
                 int idx = e.getActionIndex();
-                applyMask(e.getPointerId(idx), maskAt(e.getX(idx), e.getY(idx)));
+                int id = e.getPointerId(idx);
+                float x = e.getX(idx), y = e.getY(idx);
+                if (swipePad && swipePointerId == -1 && !controlsHidden && inDpadSquare(x, y)) {
+                    swipePointerId = id;
+                    swipeOriginX = x; swipeOriginY = y;
+                    applyMask(id, 0);                    // no direction until movement
+                } else {
+                    applyMask(id, maskAt(x, y));
+                }
                 break;
             }
             case MotionEvent.ACTION_MOVE:
                 for (int i = 0; i < e.getPointerCount(); i++) {
+                    int id = e.getPointerId(i);
+                    if (id == swipePointerId) {
+                        float dx = e.getX(i) - swipeOriginX, dy = e.getY(i) - swipeOriginY;
+                        float dist = (float) Math.hypot(dx, dy);
+                        if (dist > 16f * dp) {
+                            applyMask(id, sectorMask(dx, dy, 0));
+                            if (dist > 24f * dp) {       // iOS leash: origin trails 24dp behind the finger
+                                swipeOriginX = e.getX(i) - dx / dist * 24f * dp;
+                                swipeOriginY = e.getY(i) - dy / dist * 24f * dp;
+                            }
+                        } else {
+                            applyMask(id, 0);
+                        }
+                        continue;
+                    }
                     int m = maskAt(e.getX(i), e.getY(i));
-                    Integer old = pointerMask.get(e.getPointerId(i));
+                    Integer old = pointerMask.get(id);
                     // menu is one-shot: never re-fire it on move
                     if (old != null && (old & MASK_MENU) != 0) m |= MASK_MENU;
-                    applyMask(e.getPointerId(i), m);
+                    applyMask(id, m);
                 }
                 break;
             case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP:
-                applyMask(e.getPointerId(e.getActionIndex()), 0);
+            case MotionEvent.ACTION_POINTER_UP: {
+                int id = e.getPointerId(e.getActionIndex());
+                if (id == swipePointerId) swipePointerId = -1;
+                applyMask(id, 0);
                 break;
+            }
             case MotionEvent.ACTION_CANCEL:
+                swipePointerId = -1;
                 releaseAll();
                 break;
         }
@@ -182,7 +282,7 @@ class TouchOverlayView extends View {
         int w = getWidth(), h = getHeight();
 
         // body gradient around the screen well
-        paint.setShader(new LinearGradient(0, 0, 0, h, BODY_TOP, BODY_BOTTOM, Shader.TileMode.CLAMP));
+        paint.setShader(new LinearGradient(0, 0, 0, h, bodyTop, bodyBottom, Shader.TileMode.CLAMP));
         c.save();
         c.clipOutRect(layout.screenRect);
         c.drawRect(0, 0, w, h, paint);
@@ -195,6 +295,19 @@ class TouchOverlayView extends View {
         c.drawRoundRect(bez, layout.bezelWidth, layout.bezelWidth, paint);
         paint.setShader(null);
         c.restore();
+
+        // depth: light edge under the bezel + inner shadow ring in the well
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(1.5f * dp);
+        paint.setColor(0x40FFFFFF);
+        c.drawLine(bez.left + layout.bezelWidth, bez.bottom + 0.75f * dp,
+                   bez.right - layout.bezelWidth, bez.bottom + 0.75f * dp, paint);
+        paint.setStrokeWidth(layout.bezelWidth / 2f);
+        paint.setColor(0x30000000);
+        RectF inner = new RectF(layout.screenRect);
+        inner.inset(layout.bezelWidth / 4f, layout.bezelWidth / 4f);
+        c.drawRect(inner, paint);
+        paint.setStyle(Paint.Style.FILL);
 
         // labels + wordmark on the body
         paint.setColor(BRAND);

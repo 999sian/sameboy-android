@@ -167,6 +167,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         });
         overlay.setOpacity(settings.buttonOpacity());
         overlay.setHaptics(settings.haptics());
+        overlay.setConsoleTheme(settings.consoleIsDark(this));
+        overlay.setSwipePad(settings.swipeDpad());
         root.addView(surface, surfaceLp);
         root.addView(overlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -212,7 +214,12 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         super.onResume();
         if (ctx != 0 && !menuOpen) {
             settings.apply(ctx);                       // self-parks once; picks up Settings changes
-            if (overlay != null) { overlay.setOpacity(settings.buttonOpacity()); overlay.setHaptics(settings.haptics()); }
+            if (overlay != null) {
+                overlay.setOpacity(settings.buttonOpacity());
+                overlay.setHaptics(settings.haptics());
+                overlay.setConsoleTheme(settings.consoleIsDark(this));
+                overlay.setSwipePad(settings.swipeDpad());
+            }
             NativeBridge.nativePause(ctx, false);
         }
         handler.postDelayed(batteryPoll, 2000);
