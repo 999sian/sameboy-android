@@ -39,6 +39,7 @@ import io.sameboy.android.cupertino.CupertinoSlider
 import io.sameboy.android.cupertino.CupertinoTheme
 import io.sameboy.android.cupertino.NavRow
 import io.sameboy.android.cupertino.PickerRow
+import io.sameboy.android.cupertino.ReadableContent
 import io.sameboy.android.cupertino.SheetAction
 import io.sameboy.android.cupertino.SliderRow
 import io.sameboy.android.cupertino.ToggleRow
@@ -84,7 +85,8 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
     var rumble by remember { mutableIntStateOf(s.rumbleMode()) }
     var theme by remember { mutableIntStateOf(s.themeMode()) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    ReadableContent {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         CupertinoNavBar(title = stringResource(R.string.settings), onBack = onBack)
 
         CupertinoSection(header = "Emulation", rows = listOf(
@@ -179,6 +181,7 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
             palette = -1
             paletteEditor = false
         })
+    }
     }
 }
 

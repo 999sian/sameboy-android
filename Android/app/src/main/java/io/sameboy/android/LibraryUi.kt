@@ -74,15 +74,15 @@ object LibraryUi {
 private fun LibraryScreen(model: LibraryUi.Model, cb: LibraryUi.Callbacks) {
     var context by remember { mutableStateOf<LibraryEntry?>(null) }
     Column(Modifier.fillMaxSize()) {
-        CupertinoNavBar(title = "Library")
+        CupertinoNavBar(title = "Library", trailing = {
+            CupertinoButton(stringResource(R.string.settings), style = ButtonStyle.Plain) { cb.onSettings() }
+        })
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             CupertinoButton(stringResource(R.string.import_folder)) { cb.onImportFolder() }
             CupertinoButton(stringResource(R.string.open_rom)) { cb.onOpenRom() }
-            Spacer(Modifier.weight(1f))
-            CupertinoButton(stringResource(R.string.settings), style = ButtonStyle.Plain) { cb.onSettings() }
         }
         if (model.games.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

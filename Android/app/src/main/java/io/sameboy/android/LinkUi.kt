@@ -23,6 +23,7 @@ import io.sameboy.android.cupertino.CupertinoNavBar
 import io.sameboy.android.cupertino.CupertinoSection
 import io.sameboy.android.cupertino.CupertinoTheme
 import io.sameboy.android.cupertino.NavRow
+import io.sameboy.android.cupertino.ReadableContent
 
 object LinkUi {
     class Model internal constructor() {
@@ -49,7 +50,8 @@ object LinkUi {
 private fun LinkScreen(model: LinkUi.Model, deviceLine: String, cb: LinkUi.Callbacks) {
     var peer by remember { mutableStateOf("") }
     val status by model.status
-    Column(Modifier.fillMaxSize()) {
+    ReadableContent {
+        Column(Modifier.fillMaxSize()) {
         CupertinoNavBar(title = stringResource(R.string.link_cable), onBack = { cb.onBack() })
 
         CupertinoSection(footer = deviceLine, rows = listOf(
@@ -83,5 +85,6 @@ private fun LinkScreen(model: LinkUi.Model, deviceLine: String, cb: LinkUi.Callb
             },
             { NavRow(stringResource(R.string.link_disconnect), onClick = { cb.onDisconnect() }) },
         ))
+    }
     }
 }

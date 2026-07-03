@@ -428,3 +428,12 @@ fun CupertinoButton(
         )
     }
 }
+
+/** iOS readable-width idiom: center content in a <=640dp column.
+ *  Geometric no-op on screens narrower than the cap (phones). */
+@Composable
+fun ReadableContent(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.widthIn(max = 640.dp)) { content() }
+    }
+}

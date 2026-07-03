@@ -30,6 +30,7 @@ import io.sameboy.android.cupertino.Cupertino
 import io.sameboy.android.cupertino.CupertinoButton
 import io.sameboy.android.cupertino.CupertinoNavBar
 import io.sameboy.android.cupertino.CupertinoTheme
+import io.sameboy.android.cupertino.ReadableContent
 
 object PrinterUi {
     interface Callbacks {
@@ -47,7 +48,8 @@ object PrinterUi {
 
 @Composable
 private fun PrinterScreen(feed: Bitmap?, cb: PrinterUi.Callbacks) {
-    Column(Modifier.fillMaxSize()) {
+    ReadableContent {
+        Column(Modifier.fillMaxSize()) {
         CupertinoNavBar(title = stringResource(R.string.printer_feed), onBack = { cb.onBack() })
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -82,5 +84,6 @@ private fun PrinterScreen(feed: Bitmap?, cb: PrinterUi.Callbacks) {
                 )
             }
         }
+    }
     }
 }

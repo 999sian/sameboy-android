@@ -16,6 +16,7 @@ import io.sameboy.android.cupertino.CupertinoNavBar
 import io.sameboy.android.cupertino.CupertinoSection
 import io.sameboy.android.cupertino.CupertinoTheme
 import io.sameboy.android.cupertino.NavRow
+import io.sameboy.android.cupertino.ReadableContent
 
 object RemapUi {
     class Model internal constructor() {
@@ -44,7 +45,8 @@ object RemapUi {
 @Composable
 private fun RemapScreen(model: RemapUi.Model, cb: RemapUi.Callbacks) {
     val capturing by model.capturing
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    ReadableContent {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         CupertinoNavBar(title = stringResource(R.string.gamepad_buttons), onBack = { cb.onBack() })
         CupertinoSection(
             footer = "Tap an input, then press a controller button.",
@@ -61,5 +63,6 @@ private fun RemapScreen(model: RemapUi.Model, cb: RemapUi.Callbacks) {
         CupertinoSection(rows = listOf(
             { NavRow(stringResource(R.string.reset_defaults), onClick = { cb.onReset() }) },
         ))
+    }
     }
 }
