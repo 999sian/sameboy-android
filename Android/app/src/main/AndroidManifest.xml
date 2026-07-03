@@ -24,7 +24,7 @@
         <activity
             android:name=".EmulatorActivity"
             android:exported="false"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="fullSensor"
             android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".SettingsActivity" android:exported="false"
                   android:configChanges="orientation|screenSize|keyboardHidden" />

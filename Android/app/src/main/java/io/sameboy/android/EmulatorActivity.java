@@ -140,7 +140,9 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
 
         settings.apply(ctx);    // batch Core settings + volume before threads start
         FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(android.graphics.Color.BLACK);
         EmulatorSurfaceView surface = new EmulatorSurfaceView(this, this);
+        FrameLayout.LayoutParams surfaceLp = new FrameLayout.LayoutParams(0, 0);
         overlay = new TouchOverlayView(this, new TouchOverlayView.ControlListener() {
             @Override public void onKey(int k, boolean pressed) {
                 if (ctx != 0) NativeBridge.nativeSetKey(ctx, k, pressed);
@@ -156,11 +158,18 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                         if (pressed && !menuOpen) openMenu(); break;
                 }
             }
+        }, r -> {
+            surfaceLp.width = Math.round(r.width());
+            surfaceLp.height = Math.round(r.height());
+            surfaceLp.leftMargin = Math.round(r.left);
+            surfaceLp.topMargin = Math.round(r.top);
+            surface.setLayoutParams(surfaceLp);
         });
         overlay.setOpacity(settings.buttonOpacity());
         overlay.setHaptics(settings.haptics());
-        root.addView(surface);
-        root.addView(overlay);
+        root.addView(surface, surfaceLp);
+        root.addView(overlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
         refreshOverlayVisibility();
     }
@@ -401,7 +410,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
 
     private void refreshOverlayVisibility() {
-        if (overlay != null) overlay.setVisibility(GamepadMapper.anyGamepadConnected() ? View.GONE : View.VISIBLE);
+        if (overlay != null) overlay.setControlsHidden(GamepadMapper.anyGamepadConnected());
     }
 
     private void openMenu() {
