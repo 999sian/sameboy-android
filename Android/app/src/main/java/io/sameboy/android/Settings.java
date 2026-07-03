@@ -93,11 +93,16 @@ final class Settings {
     boolean swipeDpad()         { return p.getBoolean(K_SWIPE_DPAD, false); }
     void setSwipeDpad(boolean v){ p.edit().putBoolean(K_SWIPE_DPAD, v).apply(); }
 
-    /** Resolved console skin: true = dark body/buttons. Mode 2 follows the app theme. */
+    /** Resolved console skin: true = dark body/buttons. Mode 2 follows the app theme.
+     *  EmulatorActivity is a plain Activity (no AppCompat night resources), so honor the
+     *  in-app theme override (K_THEME) first and fall back to the system uiMode. */
     boolean consoleIsDark(android.content.Context ctx) {
         int mode = consoleTheme();
         if (mode == 0) return false;
         if (mode == 1) return true;
+        int theme = themeMode();
+        if (theme == 1) return false;   // app forced Light
+        if (theme == 2) return true;    // app forced Dark
         int night = ctx.getResources().getConfiguration().uiMode
                     & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         return night == android.content.res.Configuration.UI_MODE_NIGHT_YES;
