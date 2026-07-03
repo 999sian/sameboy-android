@@ -77,11 +77,15 @@ object GameMenuDialog {
             )
             setContent {
                 CupertinoTheme(fillBackground = false) {
-                    MenuContent(
-                        h,
-                        dismiss = { dialog.dismiss() },
-                        takeOver = { chained[0] = true; dialog.dismiss() },
-                    )
+                    // Box (propagateMinConstraints=false) drops the dialog's exact full-width
+                    // min constraint so ActionSheetContent's widthIn(max = 420.dp) can apply.
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                        MenuContent(
+                            h,
+                            dismiss = { dialog.dismiss() },
+                            takeOver = { chained[0] = true; dialog.dismiss() },
+                        )
+                    }
                 }
             }
         })
