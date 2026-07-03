@@ -298,8 +298,9 @@ fun ActionSheetContent(
             .padding(8.dp),
     ) {
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                .background(Cupertino.colors.secondarySystemGroupedBackground),
+            Modifier.fillMaxWidth().weight(1f, fill = false).clip(RoundedCornerShape(14.dp))
+                .background(Cupertino.colors.secondarySystemGroupedBackground)
+                .verticalScroll(rememberScrollState()),
         ) {
             if (title != null) {
                 Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
