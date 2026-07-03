@@ -286,7 +286,11 @@ fun ActionSheetContent(
     cancelLabel: String,
     onDismiss: () -> Unit,
 ) {
-    Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().padding(8.dp)) {
+    Column(
+        Modifier.widthIn(max = 420.dp).fillMaxWidth()
+            .clickable(remember { MutableInteractionSource() }, indication = null) {}
+            .padding(8.dp),
+    ) {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                 .background(Cupertino.colors.secondarySystemGroupedBackground),
