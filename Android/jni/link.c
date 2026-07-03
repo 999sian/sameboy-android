@@ -105,7 +105,8 @@ static bool tcp_recv(sb_transport *t, uint8_t *out, int timeout_ms) {
     tcp_transport *c = (tcp_transport *)t;
     if (c->fd < 0) return false;
     struct pollfd pfd = { .fd = c->fd, .events = POLLIN };
-    int pr = poll(&pfd, 1, timeout_ms);
+    int pr;
+    do { pr = poll(&pfd, 1, timeout_ms); } while (pr < 0 && errno == EINTR);
     if (pr <= 0) return false;                 /* 0 = timeout, <0 = error */
     while (1) {
         ssize_t n = recv(c->fd, out, 1, 0);
@@ -126,27 +127,62 @@ static sb_transport *tcp_wrap(int fd) {
     c->base.send = tcp_send; c->base.recv = tcp_recv; c->base.close = tcp_close; c->fd = fd;
     return &c->base;
 }
-sb_transport *sb_transport_tcp_listen(int port) {
+static bool cancelled(atomic_bool *cancel) { return cancel && atomic_load(cancel); }
+
+/* Poll a listening/connecting socket in ~250 ms slices so `cancel` aborts a blocking
+   accept/connect promptly (disconnect must never block the UI thread indefinitely). */
+sb_transport *sb_transport_tcp_listen(int port, atomic_bool *cancel) {
     int ls = socket(AF_INET, SOCK_STREAM, 0);
     if (ls < 0) return NULL;
     int one = 1; setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     struct sockaddr_in a = {0};
     a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(INADDR_ANY); a.sin_port = htons((uint16_t)port);
     if (bind(ls, (struct sockaddr *)&a, sizeof(a)) < 0 || listen(ls, 1) < 0) { close(ls); return NULL; }
-    int fd = accept(ls, NULL, NULL);
+    fcntl(ls, F_SETFL, fcntl(ls, F_GETFL, 0) | O_NONBLOCK);
+    int fd = -1;
+    while (!cancelled(cancel)) {
+        struct pollfd pfd = { .fd = ls, .events = POLLIN };
+        int pr = poll(&pfd, 1, 250);
+        if (pr < 0 && errno == EINTR) continue;
+        if (pr < 0) break;
+        if (pr == 0) continue;                 /* timeout: re-check cancel */
+        fd = accept(ls, NULL, NULL);
+        if (fd >= 0) break;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) continue;
+        break;
+    }
     close(ls);
     if (fd < 0) return NULL;
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK);   /* blocking for send/recv */
     return tcp_wrap(fd);
 }
-sb_transport *sb_transport_tcp_connect(const char *host, int port) {
+sb_transport *sb_transport_tcp_connect(const char *host, int port, atomic_bool *cancel) {
     char portstr[16]; snprintf(portstr, sizeof(portstr), "%d", port);
     struct addrinfo hints = {0}, *res = NULL;
     hints.ai_family = AF_INET; hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res) return NULL;
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) { freeaddrinfo(res); return NULL; }
-    if (connect(fd, res->ai_addr, res->ai_addrlen) < 0) { close(fd); freeaddrinfo(res); return NULL; }
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+    int rc = connect(fd, res->ai_addr, res->ai_addrlen);
     freeaddrinfo(res);
+    bool ok = false;
+    if (rc == 0) ok = true;
+    else if (errno == EINPROGRESS) {
+        while (!cancelled(cancel)) {
+            struct pollfd pfd = { .fd = fd, .events = POLLOUT };
+            int pr = poll(&pfd, 1, 250);
+            if (pr < 0 && errno == EINTR) continue;
+            if (pr < 0) break;
+            if (pr == 0) continue;             /* still connecting: re-check cancel */
+            int soerr = 0; socklen_t l = sizeof(soerr);
+            getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &l);
+            ok = (soerr == 0);
+            break;
+        }
+    }
+    if (!ok) { close(fd); return NULL; }
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK);   /* blocking for send/recv */
     return tcp_wrap(fd);
 }
 
@@ -157,6 +193,7 @@ struct sb_link {
     sb_transport *t;
     uint8_t in_byte;   /* peer byte for the current master transfer */
     int     bits;      /* master bit_end index 0..7; 0 = start of a fresh byte */
+    bool    dead;      /* a send/recv failed → treat as an unplugged cable (instant 0xFF) */
 };
 
 sb_link *sb_link_create(sb_transport *t) {
@@ -170,15 +207,27 @@ void sb_link_destroy(sb_link *s) {
     if (s->t) s->t->close(s->t);
     free(s);
 }
+bool sb_link_is_dead(sb_link *s) { return s && s->dead; }
 
-/* master: fired per bit. On the first bit of a byte (bits==0) SB holds the whole outgoing
-   byte — exchange it now and stash the peer byte for the 8 bit_end reads. */
+/* master: fired per bit. A fresh byte is precisely serial_count==0 at bit_start: memory.c's
+   SC-write path resets serial_count to 0 then fires; timing.c only fires mid-byte with
+   serial_count 1..7. Using serial_count (not our own shadow) self-heals a mid-byte SC
+   rewrite (Pokémon handshake retry) or a mid-transfer attach that would otherwise wedge
+   the shadow counter. On the fresh bit, SB holds the whole outgoing byte — exchange it. */
 void sb_link_bit_start(sb_link *s, GB_gameboy_t *gb, bool bit) {
     (void)bit;
-    if (!s || s->bits != 0) return;
+    if (!s) return;
+    if (gb->serial_count == 0) s->bits = 0;      /* fresh byte (SC write) — resync */
+    else if (s->bits != 0) return;               /* mid-byte continuation — no-op */
+    if (s->dead) { s->in_byte = 0xFF; return; }  /* unplugged: instant, no per-byte stall */
+    /* Strict ping-pong: the RX queue must be empty at the start of a byte. Anything present
+       is a stale reply to a previously timed-out exchange — drain it to avoid a permanent
+       off-by-one desync. */
+    uint8_t junk; while (s->t->recv(s->t, &junk, 0)) {}
     uint8_t out = GB_safe_read_memory(gb, 0xFF01);   /* SB */
     if (!s->t->send(s->t, out) || !s->t->recv(s->t, &s->in_byte, SB_LINK_TIMEOUT_MS)) {
         s->in_byte = 0xFF;   /* peer gone / timeout: link idle-high */
+        s->dead = true;      /* latch: don't stall 1500 ms on every subsequent byte */
     }
 }
 /* master: return the peer byte MSB-first over 8 calls; wraps bits back to 0 after the 8th. */
@@ -192,12 +241,12 @@ bool sb_link_bit_end(sb_link *s, GB_gameboy_t *gb) {
 /* slave: per-frame on the emu thread. If externally clocked and a master byte is waiting,
    send our SB back and clock the 8 bits in (MSB-first). */
 void sb_link_slave_poll(sb_link *s, GB_gameboy_t *gb) {
-    if (!s) return;
+    if (!s || s->dead) return;
     uint8_t sc = GB_safe_read_memory(gb, 0xFF02);
     if ((sc & 0x81) != 0x80) return;                 /* not armed as slave */
     uint8_t m;
     if (!s->t->recv(s->t, &m, 0)) return;            /* non-blocking; nothing yet */
     uint8_t out = GB_safe_read_memory(gb, 0xFF01);   /* our outgoing byte, before clocking */
-    s->t->send(s->t, out);
+    if (!s->t->send(s->t, out)) { s->dead = true; return; }
     for (int i = 0; i < 8; i++) GB_serial_set_data_bit(gb, (m >> (7 - i)) & 1);
 }

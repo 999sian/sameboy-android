@@ -239,6 +239,7 @@ void sb_emu_link_clear(sb_emulator *e) {
     sb_link_destroy(e->link);
     e->link = NULL;
 }
+bool sb_emu_link_dead(sb_emulator *e) { return e && e->link && sb_link_is_dead(e->link); }
 uint8_t sb_emu_peek_sb(sb_emulator *e) { return e ? GB_safe_read_memory(&e->gb, 0xFF01) : 0; }
 
 sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,

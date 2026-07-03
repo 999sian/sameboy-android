@@ -33,6 +33,8 @@ struct sb_session {
     char        link_host[64];    /* connect target */
     int         link_port;
     int         link_is_listen;   /* 1 listen, 0 connect */
+    atomic_bool link_cancel;              /* set to abort a blocking listen/connect */
+    _Atomic(sb_transport *) link_pending; /* worker → emu thread: transport awaiting attach */
 };
 
 static void *emu_loop(void *arg)
@@ -49,6 +51,12 @@ static void *emu_loop(void *arg)
         s->parked = 0;
         pthread_mutex_unlock(&s->pause_mtx);
         if (!atomic_load(&s->running)) break;
+
+        /* Attach a link the worker built, on THIS (emu) thread at a frame boundary — never
+           from the worker thread (that would race a running frame). Deferred while paused;
+           harmless, since no serial runs while paused. */
+        sb_transport *pt = atomic_exchange(&s->link_pending, NULL);
+        if (pt) sb_emu_link_set(s->emu, sb_link_create(pt));
 
         int turbo = atomic_load(&s->turbo) ? 1 : 0;
         if (turbo != applied_turbo) {
@@ -70,6 +78,10 @@ static void *emu_loop(void *arg)
 
         sb_emu_run_frame(s->emu);   /* blocks on the audio ring => paced */
         atomic_store(&s->battery_dirty, sb_emu_battery_dirty(s->emu) != 0);
+        if (sb_emu_link_dead(s->emu)) {
+            int exp = SB_LINK_CONNECTED;   /* don't clobber a concurrent disconnect's IDLE */
+            atomic_compare_exchange_strong(&s->link_status, &exp, SB_LINK_ERROR);
+        }
         if (!s->audio) {
             sb_ring_flush(sb_emu_audio_ring(s->emu));
             struct timespec ts = {0, 16600000};
@@ -87,13 +99,14 @@ sb_session *sb_session_create(int model, const uint8_t *rom, size_t rom_len,
     sb_session *s = calloc(1, sizeof(*s));
     if (!s) { sb_emu_destroy(emu); return NULL; }
     s->emu = emu;
-    atomic_init(&s->running, false);
+    atomic_init(&s->link_status, SB_LINK_IDLE);
+    atomic_init(&s->link_cancel, false);
+    atomic_init(&s->link_pending, NULL);
     atomic_init(&s->turbo, false);
     atomic_init(&s->rewinding, false);
     atomic_init(&s->audio_drop, false);
     atomic_init(&s->battery_dirty, false);
     atomic_init(&s->volume, 256);
-    atomic_init(&s->link_status, SB_LINK_IDLE);
     sb_emu_set_volume_ptr(emu, &s->volume);
     sb_emu_set_audio_drop(emu, &s->audio_drop);
     pthread_mutex_init(&s->pause_mtx, NULL);
@@ -231,6 +244,7 @@ int sb_session_rumble_amplitude(sb_session *s)
 void sb_session_connect_printer(sb_session *s)
 {
     if (!s) return;
+    sb_session_link_disconnect(s);   /* printer + link are mutually exclusive on the serial port */
     int was = park_begin(s);
     sb_emu_connect_printer(s->emu);
     park_end(s, was);
@@ -271,15 +285,19 @@ void sb_session_camera_deliver(sb_session *s, const uint8_t *gray)
 
 static void *link_worker(void *arg) {
     sb_session *s = arg;
+    /* Blocking accept/connect, but cancellable via link_cancel (bounded ~250 ms). */
     sb_transport *t = s->link_is_listen
-        ? sb_transport_tcp_listen(s->link_port)
-        : sb_transport_tcp_connect(s->link_host, s->link_port);
-    if (!t) { atomic_store(&s->link_status, SB_LINK_ERROR); return NULL; }
-    if (atomic_load(&s->link_status) == SB_LINK_IDLE) { t->close(t); return NULL; }  /* aborted */
-    /* wire into the emulator, parked (registers serial callbacks) */
-    int was = park_begin(s);
-    sb_emu_link_set(s->emu, sb_link_create(t));
-    park_end(s, was);
+        ? sb_transport_tcp_listen(s->link_port, &s->link_cancel)
+        : sb_transport_tcp_connect(s->link_host, s->link_port, &s->link_cancel);
+    if (!t) {
+        /* cancelled → disconnect owns the status; real failure → ERROR */
+        if (!atomic_load(&s->link_cancel)) atomic_store(&s->link_status, SB_LINK_ERROR);
+        return NULL;
+    }
+    if (atomic_load(&s->link_cancel)) { t->close(t); return NULL; }   /* aborted post-connect */
+    /* Hand the transport to the emu thread; it attaches at a frame boundary (no cross-thread
+       park). CONNECTED now — the socket is up even if attach waits for unpause. */
+    atomic_store(&s->link_pending, t);
     atomic_store(&s->link_status, SB_LINK_CONNECTED);
     return NULL;
 }
@@ -291,6 +309,8 @@ static void link_join_if_live(sb_session *s) {
 void sb_session_link_listen(sb_session *s, int port) {
     if (!s) return;
     sb_session_link_disconnect(s);           /* tear down any prior */
+    sb_session_disconnect_printer(s);        /* printer + link are mutually exclusive on the serial port */
+    atomic_store(&s->link_cancel, false);
     s->link_is_listen = 1; s->link_port = port;
     atomic_store(&s->link_status, SB_LINK_LISTENING);
     if (pthread_create(&s->link_thread, NULL, link_worker, s) == 0) s->link_thread_live = true;
@@ -300,8 +320,10 @@ void sb_session_link_listen(sb_session *s, int port) {
 void sb_session_link_connect(sb_session *s, const char *host, int port) {
     if (!s || !host) return;
     sb_session_link_disconnect(s);
+    sb_session_disconnect_printer(s);
     strncpy(s->link_host, host, sizeof(s->link_host) - 1);
     s->link_host[sizeof(s->link_host) - 1] = 0;
+    atomic_store(&s->link_cancel, false);
     s->link_is_listen = 0; s->link_port = port;
     atomic_store(&s->link_status, SB_LINK_CONNECTING);
     if (pthread_create(&s->link_thread, NULL, link_worker, s) == 0) s->link_thread_live = true;
@@ -310,11 +332,15 @@ void sb_session_link_connect(sb_session *s, const char *host, int port) {
 
 void sb_session_link_disconnect(sb_session *s) {
     if (!s) return;
-    /* Clearing the link closes the transport → unblocks a pending accept/recv in the worker. */
+    atomic_store(&s->link_cancel, true);     /* abort a blocking accept/connect (~250 ms) */
+    link_join_if_live(s);                     /* bounded join — worker can no longer block forever */
+    /* Free a transport the worker published but the emu thread hadn't attached yet. */
+    sb_transport *pt = atomic_exchange(&s->link_pending, NULL);
+    if (pt) pt->close(pt);
+    /* Detach any attached link, parked (UI thread; GB_disconnect_serial needs the emu stopped). */
     int was = park_begin(s);
     sb_emu_link_clear(s->emu);
     park_end(s, was);
-    link_join_if_live(s);
     atomic_store(&s->link_status, SB_LINK_IDLE);
 }
 

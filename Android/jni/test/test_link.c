@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 /* MBC-less 32KB ROM: entry jp 0x150; program at 0x150 loads SB, starts SC, spins on bit7. */
 static uint8_t *make_link_rom(uint8_t sb, uint8_t sc, size_t *len) {
@@ -38,6 +39,22 @@ static void *run_core(void *arg) {
     return NULL;
 }
 
+/* TCP smoke: a listener thread accepts one peer and hands the transport back. */
+typedef struct { int port; sb_transport *t; } listener;
+static void *tcp_listener(void *arg) {
+    listener *l = arg;
+    l->t = sb_transport_tcp_listen(l->port, NULL);
+    return NULL;
+}
+typedef struct { sb_transport *t; } closer;
+static void *tcp_closer(void *arg) {
+    closer *c = arg;
+    struct timespec ts = {0, 200000000};   /* 200 ms, let the peer block in recv first */
+    nanosleep(&ts, NULL);
+    c->t->close(c->t);
+    return NULL;
+}
+
 int main(void) {
     alarm(30);
     /* loopback transport unit check */
@@ -47,6 +64,28 @@ int main(void) {
     uint8_t g; assert(y->recv(y, &g, 100) && g == 0x11);
     assert(!y->recv(y, &g, 0));          /* non-blocking empty → false */
     x->close(x); y->close(y);
+
+    /* TCP smoke over 127.0.0.1: connect ↔ listen, byte both ways, peer-close unblocks recv */
+    {
+        int port = 48222;
+        listener l = { port, NULL };
+        pthread_t lt; pthread_create(&lt, NULL, tcp_listener, &l);
+        struct timespec ts = {0, 100000000}; nanosleep(&ts, NULL);  /* let listen() bind */
+        sb_transport *c = sb_transport_tcp_connect("127.0.0.1", port, NULL);
+        pthread_join(lt, NULL);
+        assert(c && l.t);                       /* both ends up */
+        assert(c->send(c, 0x5A));
+        uint8_t b; assert(l.t->recv(l.t, &b, 1000) && b == 0x5A);   /* connect → listen */
+        assert(l.t->send(l.t, 0xC3));
+        assert(c->recv(c, &b, 1000) && b == 0xC3);                  /* listen → connect */
+        assert(!c->recv(c, &b, 0));             /* non-blocking empty → false */
+        /* peer close must unblock a pending recv promptly */
+        closer cl = { l.t };
+        pthread_t ct; pthread_create(&ct, NULL, tcp_closer, &cl);
+        assert(!c->recv(c, &b, 5000));          /* returns on peer close, well under 5 s */
+        pthread_join(ct, NULL);
+        c->close(c);
+    }
 
     /* two-core exchange */
     size_t ml, sl;
