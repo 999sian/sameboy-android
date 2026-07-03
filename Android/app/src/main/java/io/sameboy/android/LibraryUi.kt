@@ -45,7 +45,12 @@ import io.sameboy.android.cupertino.SheetAction
 object LibraryUi {
     class Model internal constructor() {
         internal val games = mutableStateListOf<LibraryEntry>()
-        fun setGames(list: List<LibraryEntry>) { games.clear(); games.addAll(list) }
+        fun setGames(list: List<LibraryEntry>) {
+            games.clear()
+            // fresh instances: in-place Java field mutations (favorite/lastPlayed) are invisible
+            // to snapshot state, so the grid must receive new references to recompose tiles
+            list.mapTo(games) { LibraryEntry(it.uri, it.zipEntry, it.displayName, it.title, it.crc32, it.favorite, it.lastPlayed) }
+        }
     }
 
     interface Callbacks {
