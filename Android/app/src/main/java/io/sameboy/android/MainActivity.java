@@ -1,7 +1,6 @@
 package io.sameboy.android;
 
 import androidx.appcompat.app.AppCompatActivity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -9,19 +8,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
-import android.text.format.DateUtils;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.BaseAdapter;
-import android.widget.Button;
-import android.widget.GridView;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -30,52 +18,26 @@ public class MainActivity extends AppCompatActivity {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Library library;
-    private GridView grid;
-    private LibraryAdapter adapter;
-    private TextView empty;
+    private LibraryUi.Model model;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         library = new Library(this);
         library.load();
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        Button importFolder = new Button(this);
-        importFolder.setText(R.string.import_folder);
-        importFolder.setOnClickListener(v -> pickTree());
-        Button openFile = new Button(this);
-        openFile.setText(R.string.open_rom);
-        openFile.setOnClickListener(v -> pickFile());
-        bar.addView(importFolder);
-        bar.addView(openFile);
-        Button settings = new Button(this);
-        settings.setText(R.string.settings);
-        settings.setOnClickListener(v -> startActivity(new android.content.Intent(this, SettingsActivity.class)));
-        bar.addView(settings);
-        root.addView(bar);
-
-        empty = new TextView(this);
-        empty.setText(R.string.library_empty);
-        empty.setGravity(Gravity.CENTER);
-        empty.setPadding(0, 64, 0, 0);
-        root.addView(empty);
-
-        grid = new GridView(this);
-        grid.setNumColumns(GridView.AUTO_FIT);
-        int cell = (int) (getResources().getDisplayMetrics().density * 150);
-        grid.setColumnWidth(cell);
-        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        adapter = new LibraryAdapter();
-        grid.setAdapter(adapter);
-        grid.setOnItemClickListener((p, view, pos, id) -> launch(adapter.items.get(pos)));
-        grid.setOnItemLongClickListener((p, view, pos, id) -> { showContext(adapter.items.get(pos)); return true; });
-        root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        setContentView(root);
+        model = LibraryUi.bind(this, new LibraryUi.Callbacks() {
+            @Override public void onImportFolder() { pickTree(); }
+            @Override public void onOpenRom() { pickFile(); }
+            @Override public void onSettings() {
+                startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+            }
+            @Override public void onPlay(LibraryEntry e) { launch(e); }
+            @Override public void onToggleFavorite(LibraryEntry e) {
+                library.setFavorite(e.crc32, !e.favorite); library.save(); refresh();
+            }
+            @Override public void onRemove(LibraryEntry e) {
+                library.remove(e.crc32); library.save(); refresh();
+            }
+        });
     }
 
     @Override protected void onResume() {
@@ -84,14 +46,7 @@ public class MainActivity extends AppCompatActivity {
         refresh();
     }
 
-    private void refresh() {
-        adapter.items.clear();
-        adapter.items.addAll(library.listSorted());
-        adapter.notifyDataSetChanged();
-        boolean e = adapter.items.isEmpty();
-        empty.setVisibility(e ? View.VISIBLE : View.GONE);
-        grid.setVisibility(e ? View.GONE : View.VISIBLE);
-    }
+    private void refresh() { model.setGames(library.listSorted()); }
 
     private void pickTree() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
@@ -141,25 +96,12 @@ public class MainActivity extends AppCompatActivity {
     private void launch(LibraryEntry entry) {
         library.touch(entry.crc32);
         library.save();
+        refresh();
         Intent i = new Intent(this, EmulatorActivity.class);
         i.setData(Uri.parse(entry.uri));
         if (entry.zipEntry != null) i.putExtra(EmulatorActivity.EXTRA_ZIP_ENTRY, entry.zipEntry);
         i.putExtra(EmulatorActivity.EXTRA_ROM_KEY, entry.crc32);
         startActivity(i);
-    }
-
-    private void showContext(LibraryEntry entry) {
-        String fav = entry.favorite ? getString(R.string.unfavorite) : getString(R.string.favorite);
-        String[] actions = { getString(R.string.play), fav, getString(R.string.remove) };
-        new AlertDialog.Builder(this)
-            .setTitle(entry.label())
-            .setItems(actions, (d, which) -> {
-                switch (which) {
-                    case 0: launch(entry); break;
-                    case 1: library.setFavorite(entry.crc32, !entry.favorite); library.save(); refresh(); break;
-                    case 2: library.remove(entry.crc32); library.save(); refresh(); break;
-                }
-            }).show();
     }
 
     private String queryName(Uri uri) {
@@ -173,33 +115,5 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception ignored) {}
         if (name == null) name = uri.getLastPathSegment();
         return name == null ? "rom" : name;
-    }
-
-    private final class LibraryAdapter extends BaseAdapter {
-        final List<LibraryEntry> items = new ArrayList<>();
-        @Override public int getCount() { return items.size(); }
-        @Override public Object getItem(int p) { return items.get(p); }
-        @Override public long getItemId(int p) { return p; }
-        @Override public View getView(int pos, View convert, ViewGroup parent) {
-            LinearLayout cell;
-            if (convert instanceof LinearLayout) {
-                cell = (LinearLayout) convert;
-            } else {
-                cell = new LinearLayout(MainActivity.this);
-                cell.setOrientation(LinearLayout.VERTICAL);
-                int pad = (int) (getResources().getDisplayMetrics().density * 8);
-                cell.setPadding(pad, pad, pad, pad);
-                TextView title = new TextView(MainActivity.this); title.setId(1);
-                TextView sub = new TextView(MainActivity.this); sub.setId(2);
-                cell.addView(title);
-                cell.addView(sub);
-            }
-            LibraryEntry e = items.get(pos);
-            ((TextView) cell.findViewById(1)).setText((e.favorite ? "\u2605 " : "") + e.label());
-            ((TextView) cell.findViewById(2)).setText(e.lastPlayed == 0
-                ? getString(R.string.never)
-                : DateUtils.getRelativeTimeSpanString(e.lastPlayed).toString());
-            return cell;
-        }
     }
 }
