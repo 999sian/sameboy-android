@@ -37,11 +37,26 @@ jobs:
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264"
 
-      # rgbds is not installed in CI: the boot-ROM gate warns + skips, and the app builds
-      # boot-ROM-less. (A packaged release build would install rgbds to bundle boot ROMs.)
+      # rgbds is required to build SameBoy's boot ROMs (make bootroms). Without it the
+      # Gradle generateBootRoms task skips and the APK ships boot-ROM-less, which hangs
+      # some CGB titles (e.g. Pokémon Crystal) on a white screen. Ubuntu 24.04 ships 0.7.0.
+      - name: Install rgbds (boot ROMs)
+        run: sudo apt-get update && sudo apt-get install -y rgbds
+
       - name: Build debug APK (all 4 ABIs)
         working-directory: Android
         run: ./gradlew --no-daemon :app:assembleDebug
+
+      # Boot ROMs MUST be bundled — an empty assets/bootroms/ boots blank on real ROMs.
+      - name: Verify boot ROMs bundled
+        shell: bash
+        working-directory: Android
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          n=$(unzip -l "$APK" | grep -c 'assets/bootroms/.*\.bin')
+          echo "boot ROM .bin assets in APK: $n"
+          test "$n" -ge 5
 
       # Guard the 16 KB page-size fix (Android 15+/Play requirement) and ABI coverage.
       - name: Verify ABIs + 16 KB alignment
