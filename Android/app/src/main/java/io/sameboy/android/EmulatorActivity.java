@@ -196,12 +196,29 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             try { s.setFrameRate(59.7275f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE); }
             catch (Exception ignored) {}
         }
+        pinRefreshRate();   /* window-level 60Hz clamp that survives touch-boost */
         if (ctx != 0) {
             NativeBridge.nativeStart(ctx, s);
             if (menuOpen) NativeBridge.nativePause(ctx, true);
         }
     }
     @Override public void onSurfaceGone() { if (ctx != 0) NativeBridge.nativeStop(ctx); }
+
+    /* Clamp the WINDOW's refresh range to 60 Hz. Unlike Surface.setFrameRate (a content
+       hint SurfaceFlinger overrides on touch-boost, kicking an LTPO panel to 120 Hz and
+       reintroducing the 120/59.73 beat), preferredMin/MaxDisplayRefreshRate is a
+       DisplayModeDirector vote that survives touch. 60 Hz is the lowest mode >= the GB's
+       59.7275 fps, so it minimizes the residual beat while keeping motion smooth. API 30+;
+       no-op on fixed-rate panels (Moto G4 only has 60). */
+    private void pinRefreshRate() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return;
+        try {
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.preferredMinDisplayRefreshRate = 60f;
+            lp.preferredMaxDisplayRefreshRate = 60f;
+            getWindow().setAttributes(lp);
+        } catch (Exception ignored) {}
+    }
 
     @Override protected void onPause() {
         super.onPause();
@@ -221,6 +238,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
     @Override protected void onResume() {
         super.onResume();
+        pinRefreshRate();   /* reassert 60Hz clamp; window attrs can reset across pause */
         if (ctx != 0 && !menuOpen) {
             settings.apply(ctx);                       // self-parks once; picks up Settings changes
             if (overlay != null) {
