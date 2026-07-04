@@ -204,32 +204,41 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
     @Override public void onSurfaceGone() { if (ctx != 0) NativeBridge.nativeStop(ctx); }
 
-    /* Pin the WINDOW to the 60 Hz display mode. Surface.setFrameRate is only a content
-       hint SurfaceFlinger overrides on touch-boost, kicking an LTPO panel to 120 Hz and
-       reintroducing the 120/59.73 frame-duplication beat. preferredDisplayModeId selects
-       an exact Display.Mode — the strongest app-level lever, and it survives touch. Pick
-       the mode at the CURRENT resolution whose refresh is closest to the GB's 59.7275 fps
-       (i.e. 60 Hz), so we never change resolution. No-op on fixed-rate panels (Moto G4). */
+    /* Pin the window to 60 Hz — the mode nearest the GB's 59.7275 fps. Surface.setFrameRate
+       is only a content hint; on LTPO panels the render-rate governor otherwise drifts
+       (Pixel touch-boosts to 120; OnePlus idles the render rate to 50, dropping ~10 emu
+       frames/s → judder). We stack every app-level lever:
+         1. preferredDisplayModeId  — pins the physical Display.Mode (resolution + base).
+         2. preferredRefreshRate    — explicit physical-rate request (public since API 21).
+         3. preferredMin/MaxDisplayRefreshRate — clamps the RENDER rate to [60,60]; the only
+            lever that stops the render-rate governor picking 50/120. Public since API 30 but
+            absent from some SDK stubs, so set via reflection (no-op if unavailable).
+       No-op on fixed-rate panels (Moto G4 only has 60). */
     private void pinRefreshRate() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;   // Display.Mode since API 23
         try {
             android.view.Display display = getWindow().getDecorView().getDisplay();
             if (display == null) return;
             android.view.Display.Mode cur = display.getMode();
-            android.view.Display.Mode[] modes = display.getSupportedModes();
-            int bestId = 0;
+            android.view.Display.Mode best = null;
             float bestDiff = Float.MAX_VALUE;
-            for (android.view.Display.Mode m : modes) {
+            for (android.view.Display.Mode m : display.getSupportedModes()) {
                 if (m.getPhysicalWidth() != cur.getPhysicalWidth()
                         || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;  // same resolution only
                 float diff = Math.abs(m.getRefreshRate() - 59.7275f);
-                if (diff < bestDiff) { bestDiff = diff; bestId = m.getModeId(); }
+                if (diff < bestDiff) { bestDiff = diff; best = m; }
             }
-            if (bestId != 0) {
-                android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
-                lp.preferredDisplayModeId = bestId;
-                getWindow().setAttributes(lp);
-            }
+            if (best == null) return;
+            float hz = best.getRefreshRate();
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.preferredDisplayModeId = best.getModeId();
+            lp.preferredRefreshRate = hz;
+            // Render-rate clamp [hz,hz] via reflection (fields public since API 30, not in all stubs).
+            try {
+                lp.getClass().getField("preferredMinDisplayRefreshRate").setFloat(lp, hz);
+                lp.getClass().getField("preferredMaxDisplayRefreshRate").setFloat(lp, hz);
+            } catch (Throwable ignored) {}
+            getWindow().setAttributes(lp);
         } catch (Exception ignored) {}
     }
 
