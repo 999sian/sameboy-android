@@ -37,11 +37,16 @@ jobs:
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264"
 
-      # rgbds is required to build SameBoy's boot ROMs (make bootroms). Without it the
-      # Gradle generateBootRoms task skips and the APK ships boot-ROM-less, which hangs
-      # some CGB titles (e.g. Pokémon Crystal) on a white screen. Ubuntu 24.04 ships 0.7.0.
+      # rgbds builds SameBoy's boot ROMs (make bootroms). Not in the runner's apt sources,
+      # so install the pinned, statically-linked official release (matches local 0.7.0).
+      # Without it generateBootRoms skips, the APK ships boot-ROM-less, and some CGB titles
+      # (e.g. Pokémon Crystal) hang on a white screen.
       - name: Install rgbds (boot ROMs)
-        run: sudo apt-get update && sudo apt-get install -y rgbds
+        run: |
+          curl -fsSL -o /tmp/rgbds.tar.xz \
+            https://github.com/gbdev/rgbds/releases/download/v0.7.0/rgbds-0.7.0-linux-x86_64.tar.xz
+          sudo tar xJf /tmp/rgbds.tar.xz -C /usr/local/bin rgbasm rgblink rgbfix rgbgfx
+          rgbasm --version
 
       - name: Build debug APK (all 4 ABIs)
         working-directory: Android
