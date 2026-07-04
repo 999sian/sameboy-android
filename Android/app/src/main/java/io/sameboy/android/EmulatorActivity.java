@@ -10,6 +10,7 @@ import android.widget.Toast;
 import android.widget.TextView;
 import android.graphics.Bitmap;
 import android.os.Handler;
+import android.os.Build;
 import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -187,6 +188,14 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
 
     @Override public void onSurfaceReady(Surface s) {
+        /* The core is audio-clocked at the Game Boy's true 59.7275 fps. Tell the
+           compositor so variable-refresh (LTPO/120Hz) panels lock to a clean
+           multiple instead of beating a non-integer 120/59.73 ratio — that beat
+           is the scrolling stutter seen on Pixel 8 Pro but not on 60Hz phones. */
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try { s.setFrameRate(59.7275f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE); }
+            catch (Exception ignored) {}
+        }
         if (ctx != 0) {
             NativeBridge.nativeStart(ctx, s);
             if (menuOpen) NativeBridge.nativePause(ctx, true);
