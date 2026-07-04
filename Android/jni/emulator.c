@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 
 #define SB_BOOT_ROM_COUNT 10   /* GB_BOOT_ROM_AGB + 1 */
 
@@ -14,6 +15,8 @@ struct sb_emulator {
     int back;                       /* index of the buffer Core renders into */
     unsigned front_w, front_h;
     pthread_mutex_t fb_mtx;
+    pthread_cond_t  frame_cv;       /* signalled when a new frame is produced (present-on-produce) */
+    uint64_t        frame_seq;      /* bumps once per completed frame; render waits on changes */
     sb_ring *audio;
     struct { uint8_t *data; size_t len; } boot[SB_BOOT_ROM_COUNT];  /* owned copies */
     const atomic_bool *audio_drop;
@@ -48,6 +51,8 @@ static void vblank_cb(GB_gameboy_t *gb, GB_vblank_type_t type)
     e->front_h = GB_get_screen_height(gb);
     e->back ^= 1;                                 /* swap */
     GB_set_pixels_output(gb, e->buffers[e->back]);
+    e->frame_seq++;                               /* new frame ready */
+    pthread_cond_signal(&e->frame_cv);            /* wake the render thread (present-on-produce) */
     pthread_mutex_unlock(&e->fb_mtx);
 }
 
@@ -248,6 +253,7 @@ sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
     sb_emulator *e = calloc(1, sizeof(*e));
     if (!e) return NULL;
     pthread_mutex_init(&e->fb_mtx, NULL);
+    pthread_cond_init(&e->frame_cv, NULL);
     pthread_mutex_init(&e->printer_mtx, NULL);
     /* ~100 ms ring. sb_ring_push blocks when full, so at runtime the AAudio
        callback's pop rate paces the emulation thread (audio is the master
@@ -323,6 +329,34 @@ void sb_emu_copy_front(sb_emulator *e, uint32_t *dst, unsigned *w, unsigned *h)
     pthread_mutex_unlock(&e->fb_mtx);
     if (w) *w = fw;
     if (h) *h = fh;
+}
+
+/* Present-on-produce: block until frame_seq advances past *last_seen (a new frame was
+   produced), or timeout_ms elapses (bounds shutdown latency / avoids a permanent stall if
+   the emu is paused). Updates *last_seen. Returns 1 if a new frame arrived, 0 on timeout. */
+int sb_emu_wait_frame(sb_emulator *e, uint64_t *last_seen, int timeout_ms)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+    ts.tv_sec  += timeout_ms / 1000 + ts.tv_nsec / 1000000000L;
+    ts.tv_nsec %= 1000000000L;
+    int got = 0;
+    pthread_mutex_lock(&e->fb_mtx);
+    while (e->frame_seq == *last_seen) {
+        if (pthread_cond_timedwait(&e->frame_cv, &e->fb_mtx, &ts) != 0) break;  /* timeout */
+    }
+    if (e->frame_seq != *last_seen) { *last_seen = e->frame_seq; got = 1; }
+    pthread_mutex_unlock(&e->fb_mtx);
+    return got;
+}
+
+/* Wake any thread blocked in sb_emu_wait_frame (e.g. to observe a stop flag). */
+void sb_emu_wake(sb_emulator *e)
+{
+    pthread_mutex_lock(&e->fb_mtx);
+    pthread_cond_broadcast(&e->frame_cv);
+    pthread_mutex_unlock(&e->fb_mtx);
 }
 
 sb_ring *sb_emu_audio_ring(sb_emulator *e) { return e->audio; }
@@ -475,6 +509,7 @@ void sb_emu_destroy(sb_emulator *e)
     free(e->printer_feed);
     pthread_mutex_destroy(&e->printer_mtx);
     pthread_mutex_destroy(&e->camera_mtx);
+    pthread_cond_destroy(&e->frame_cv);
     pthread_mutex_destroy(&e->fb_mtx);
     free(e);
 }

@@ -22,6 +22,11 @@ const uint32_t *sb_emu_front_buffer(sb_emulator *e, unsigned *w, unsigned *h);
    under the frame lock, so the render thread never reads a buffer the emu
    thread is mid-overwriting. Writes the frame dimensions to *w,*h. */
 void         sb_emu_copy_front(sb_emulator *e, uint32_t *dst, unsigned *w, unsigned *h);
+/* Present-on-produce pacing (render thread): block until a new frame is produced past
+   *last_seen or timeout_ms elapses. Returns 1 if a new frame arrived, 0 on timeout.
+   sb_emu_wake() unblocks a waiter so it can observe a stop flag. */
+int          sb_emu_wait_frame(sb_emulator *e, uint64_t *last_seen, int timeout_ms);
+void         sb_emu_wake(sb_emulator *e);
 sb_ring     *sb_emu_audio_ring(sb_emulator *e);
 void         sb_emu_set_key(sb_emulator *e, int gb_key_index, int pressed);
 size_t       sb_emu_save_battery(sb_emulator *e, uint8_t **out_malloced);

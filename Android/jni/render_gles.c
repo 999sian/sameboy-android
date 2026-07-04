@@ -77,7 +77,14 @@ static void *render_thread(void *arg)
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, tc);
 
+    uint64_t last_seen = 0;
     while (r->running) {
+        /* Present-on-produce: block until the emu completes a new frame (or 100 ms), so we
+           post at the emu's true ~59.73 fps instead of free-running at the panel rate. This
+           removes the render/emu clock beat AND makes SurfaceFlinger's content-rate detector
+           see ~60 fps (so LTPO governors grant 60, not idle to 50). */
+        if (!sb_emu_wait_frame(r->emu, &last_seen, 100)) continue;  /* timeout (paused): re-check running */
+        if (!r->running) break;
         unsigned w, h;
         sb_emu_copy_front(r->emu, r->staging, &w, &h);
 
@@ -131,6 +138,7 @@ void sb_render_stop(sb_renderer *r)
 {
     if (!r) return;
     r->running = 0;
+    sb_emu_wake(r->emu);   /* unblock a present-on-produce wait so the loop sees running=0 */
     pthread_join(r->thread, NULL);
     free(r);
 }
