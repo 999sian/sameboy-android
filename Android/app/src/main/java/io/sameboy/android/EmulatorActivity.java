@@ -188,16 +188,15 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
 
     @Override public void onSurfaceReady(Surface s) {
-        /* Request a clean 60 fps presentation. The GB core is audio-clocked at 59.7275 fps,
-           but requesting that exact rate with FIXED_SOURCE makes some governors (OnePlus)
-           map it to a 50 Hz render rate — dropping ~10 emu frames/s. Requesting 60 DEFAULT
-           ("this surface renders 60") makes SurfaceFlinger pick the 60 render rate; the emu
-           still runs 59.7275 (1 duplicated frame every ~3.7 s — accurate, imperceptible). */
+        /* Pin the smoothest display mode first (sets pinnedHz — 120 on a 120/144 panel, else
+           60), then tell SurfaceFlinger this surface renders at that rate so it picks it as the
+           render rate. The emu stays audio-clocked at 59.7275; present-on-produce shows every
+           frame at pinnedHz with no drops. */
+        pinRefreshRate();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try { s.setFrameRate(60.0f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT); }
+            try { s.setFrameRate(pinnedHz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT); }
             catch (Exception ignored) {}
         }
-        pinRefreshRate();   /* window-level 60Hz clamp that survives touch-boost */
         if (ctx != 0) {
             NativeBridge.nativeStart(ctx, s);
             if (menuOpen) NativeBridge.nativePause(ctx, true);
@@ -205,16 +204,15 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
     @Override public void onSurfaceGone() { if (ctx != 0) NativeBridge.nativeStop(ctx); }
 
-    /* Pin the window to 60 Hz — the mode nearest the GB's 59.7275 fps. Surface.setFrameRate
-       is only a content hint; on LTPO panels the render-rate governor otherwise drifts
-       (Pixel touch-boosts to 120; OnePlus idles the render rate to 50, dropping ~10 emu
-       frames/s → judder). We stack every app-level lever:
-         1. preferredDisplayModeId  — pins the physical Display.Mode (resolution + base).
-         2. preferredRefreshRate    — explicit physical-rate request (public since API 21).
-         3. preferredMin/MaxDisplayRefreshRate — clamps the RENDER rate to [60,60]; the only
-            lever that stops the render-rate governor picking 50/120. Public since API 30 but
-            absent from some SDK stubs, so set via reflection (no-op if unavailable).
-       No-op on fixed-rate panels (Moto G4 only has 60). */
+    /* Pick the display mode that presents the GB's 59.7275 fps most smoothly and pin it.
+       Key finding from on-device measurement: targeting 60 Hz is a trap — it sits just above
+       59.7275, so LTPO power governors idle the render rate BELOW it (OnePlus → 50 Hz), which
+       drops ~10 emu frames/s (judder). Instead prefer the HIGHEST refresh that's a near-integer
+       multiple of 59.7275 (≈120 Hz on a 120/144 panel): with present-on-produce the emu posts
+       59.7275 unique frames and every one is shown (≥1 scanout), so nothing drops. 60 Hz is the
+       fallback on 60-only panels. We pin the mode + request the rate; the min/max render clamp
+       (reflection, public since API 30 but absent from some SDK stubs) keeps the floor there. */
+    private float pinnedHz = 60f;
     private void pinRefreshRate() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;   // Display.Mode since API 23
         try {
@@ -222,22 +220,36 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             if (display == null) return;
             android.view.Display.Mode cur = display.getMode();
             android.view.Display.Mode best = null;
-            float bestDiff = Float.MAX_VALUE;
+            float bestScore = Float.MAX_VALUE;
             for (android.view.Display.Mode m : display.getSupportedModes()) {
                 if (m.getPhysicalWidth() != cur.getPhysicalWidth()
                         || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;  // same resolution only
-                float diff = Math.abs(m.getRefreshRate() - 59.7275f);
-                if (diff < bestDiff) { bestDiff = diff; best = m; }
+                float hz = m.getRefreshRate();
+                if (hz < 59f) continue;                        // below GB rate → would drop frames
+                float mult = hz / 59.7275f;
+                float frac = Math.abs(mult - Math.round(mult));  // distance from an integer multiple
+                if (frac > 0.12f) continue;                     // e.g. reject 144 (2.41×, uneven scanout)
+                // Among clean multiples, prefer the highest (most idle headroom above 59.73).
+                float score = frac - hz / 1000f;                // lower = better; bias toward higher hz
+                if (score < bestScore) { bestScore = score; best = m; }
+            }
+            if (best == null) {   // no clean multiple ≥60 (e.g. only 144): fall back to nearest ≥60
+                for (android.view.Display.Mode m : display.getSupportedModes()) {
+                    if (m.getPhysicalWidth() != cur.getPhysicalWidth()
+                            || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;
+                    float hz = m.getRefreshRate();
+                    if (hz < 59f) continue;
+                    if (best == null || hz < best.getRefreshRate()) best = m;
+                }
             }
             if (best == null) return;
-            float hz = best.getRefreshRate();
+            pinnedHz = best.getRefreshRate();
             android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
             lp.preferredDisplayModeId = best.getModeId();
-            lp.preferredRefreshRate = hz;
-            // Render-rate clamp [hz,hz] via reflection (fields public since API 30, not in all stubs).
-            try {
-                lp.getClass().getField("preferredMinDisplayRefreshRate").setFloat(lp, hz);
-                lp.getClass().getField("preferredMaxDisplayRefreshRate").setFloat(lp, hz);
+            lp.preferredRefreshRate = pinnedHz;
+            try {   // render-rate clamp [hz,hz] (reflection; no-op if fields absent)
+                lp.getClass().getField("preferredMinDisplayRefreshRate").setFloat(lp, pinnedHz);
+                lp.getClass().getField("preferredMaxDisplayRefreshRate").setFloat(lp, pinnedHz);
             } catch (Throwable ignored) {}
             getWindow().setAttributes(lp);
         } catch (Exception ignored) {}
