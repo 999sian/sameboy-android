@@ -204,19 +204,32 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
     @Override public void onSurfaceGone() { if (ctx != 0) NativeBridge.nativeStop(ctx); }
 
-    /* Clamp the WINDOW's refresh range to 60 Hz. Unlike Surface.setFrameRate (a content
+    /* Pin the WINDOW to the 60 Hz display mode. Surface.setFrameRate is only a content
        hint SurfaceFlinger overrides on touch-boost, kicking an LTPO panel to 120 Hz and
-       reintroducing the 120/59.73 beat), preferredMin/MaxDisplayRefreshRate is a
-       DisplayModeDirector vote that survives touch. 60 Hz is the lowest mode >= the GB's
-       59.7275 fps, so it minimizes the residual beat while keeping motion smooth. API 30+;
-       no-op on fixed-rate panels (Moto G4 only has 60). */
+       reintroducing the 120/59.73 frame-duplication beat. preferredDisplayModeId selects
+       an exact Display.Mode — the strongest app-level lever, and it survives touch. Pick
+       the mode at the CURRENT resolution whose refresh is closest to the GB's 59.7275 fps
+       (i.e. 60 Hz), so we never change resolution. No-op on fixed-rate panels (Moto G4). */
     private void pinRefreshRate() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;   // Display.Mode since API 23
         try {
-            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
-            lp.preferredMinDisplayRefreshRate = 60f;
-            lp.preferredMaxDisplayRefreshRate = 60f;
-            getWindow().setAttributes(lp);
+            android.view.Display display = getWindow().getDecorView().getDisplay();
+            if (display == null) return;
+            android.view.Display.Mode cur = display.getMode();
+            android.view.Display.Mode[] modes = display.getSupportedModes();
+            int bestId = 0;
+            float bestDiff = Float.MAX_VALUE;
+            for (android.view.Display.Mode m : modes) {
+                if (m.getPhysicalWidth() != cur.getPhysicalWidth()
+                        || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;  // same resolution only
+                float diff = Math.abs(m.getRefreshRate() - 59.7275f);
+                if (diff < bestDiff) { bestDiff = diff; bestId = m.getModeId(); }
+            }
+            if (bestId != 0) {
+                android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+                lp.preferredDisplayModeId = bestId;
+                getWindow().setAttributes(lp);
+            }
         } catch (Exception ignored) {}
     }
 
