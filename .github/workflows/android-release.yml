@@ -38,6 +38,11 @@ jobs:
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264"
 
+      # rgbds builds SameBoy's boot ROMs (make bootroms). Without it the APK ships an empty
+      # assets/bootroms/ and hangs some CGB titles (Pokémon Crystal) on a white screen.
+      - name: Install rgbds (boot ROMs)
+        run: sudo apt-get update && sudo apt-get install -y rgbds
+
       # secrets are NOT available in step `if:` — map to env and gate in shell. When the
       # keystore secret is present, decode it and export SAMEBOY_KEYSTORE for the build;
       # when absent, the build falls back to the debug key (see app/build.gradle).
@@ -61,6 +66,17 @@ jobs:
           SAMEBOY_KEY_ALIAS: ${{ secrets.SAMEBOY_KEY_ALIAS }}
           SAMEBOY_KEY_PASSWORD: ${{ secrets.SAMEBOY_KEY_PASSWORD }}
         run: ./gradlew --no-daemon :app:assembleRelease
+
+      # Boot ROMs MUST be bundled — an empty assets/bootroms/ boots blank on real ROMs.
+      - name: Verify boot ROMs bundled
+        shell: bash
+        working-directory: Android
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          n=$(unzip -l "$APK" | grep -c 'assets/bootroms/.*\.bin')
+          echo "boot ROM .bin assets in APK: $n"
+          test "$n" -ge 5
 
       # Guard the 16 KB page-size fix (Android 15+/Play) and ABI coverage before publishing.
       - name: Verify ABIs + 16 KB alignment
