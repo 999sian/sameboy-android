@@ -24,7 +24,7 @@ eval cc $CFLAGS test/test_emulator.c emulator.c link.c ring_buffer.c $CORE_SRC -
 /tmp/sb_temu
 
 echo "== session =="
-eval cc -Itest/shim $CFLAGS test/test_session.c session.c emulator.c link.c ring_buffer.c test/shim_stubs.c $CORE_SRC -lpthread -lm -o /tmp/sb_tses
+eval cc -Itest/shim $CFLAGS test/test_session.c session.c emulator.c link.c ring_buffer.c sched_hint.c test/shim_stubs.c $CORE_SRC -lpthread -lm -o /tmp/sb_tses
 /tmp/sb_tses
 
 echo "== link =="

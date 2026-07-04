@@ -2,6 +2,7 @@
 #include "render_gles.h"
 #include "audio_aaudio.h"
 #include "link.h"
+#include "sched_hint.h"
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -40,6 +41,9 @@ struct sb_session {
 static void *emu_loop(void *arg)
 {
     sb_session *s = arg;
+    /* Audio-clocked producer: keep it off a cold little core so it never wakes late
+       (else the ring underruns -> audio crackle AND the frame lands late -> hitch). */
+    sb_sched_boost_current_thread(-19 /* THREAD_PRIORITY_URGENT_AUDIO */);
     int applied_turbo = -1; /* -1: force first-iteration apply — core turbo state persists across stop/start */
     while (atomic_load(&s->running)) {
         pthread_mutex_lock(&s->pause_mtx);

@@ -1,4 +1,5 @@
 #include "render_gles.h"
+#include "sched_hint.h"
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <pthread.h>
@@ -34,6 +35,7 @@ static GLuint compile(GLenum t, const char *src)
 static void *render_thread(void *arg)
 {
     sb_renderer *r = arg;
+    sb_sched_boost_current_thread(-4 /* THREAD_PRIORITY_DISPLAY: bias off little cores */);
 
     EGLDisplay dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     eglInitialize(dpy, NULL, NULL);
