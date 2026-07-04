@@ -188,12 +188,13 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     }
 
     @Override public void onSurfaceReady(Surface s) {
-        /* The core is audio-clocked at the Game Boy's true 59.7275 fps. Tell the
-           compositor so variable-refresh (LTPO/120Hz) panels lock to a clean
-           multiple instead of beating a non-integer 120/59.73 ratio — that beat
-           is the scrolling stutter seen on Pixel 8 Pro but not on 60Hz phones. */
+        /* Request a clean 60 fps presentation. The GB core is audio-clocked at 59.7275 fps,
+           but requesting that exact rate with FIXED_SOURCE makes some governors (OnePlus)
+           map it to a 50 Hz render rate — dropping ~10 emu frames/s. Requesting 60 DEFAULT
+           ("this surface renders 60") makes SurfaceFlinger pick the 60 render rate; the emu
+           still runs 59.7275 (1 duplicated frame every ~3.7 s — accurate, imperceptible). */
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try { s.setFrameRate(59.7275f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE); }
+            try { s.setFrameRate(60.0f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT); }
             catch (Exception ignored) {}
         }
         pinRefreshRate();   /* window-level 60Hz clamp that survives touch-boost */
