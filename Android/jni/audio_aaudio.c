@@ -6,6 +6,7 @@
 struct sb_audio {
     AAudioStream *stream;
     sb_ring *ring;
+    atomic_bool *dead;
 };
 
 static aaudio_data_callback_result_t data_cb(AAudioStream *stream, void *user,
@@ -17,7 +18,19 @@ static aaudio_data_callback_result_t data_cb(AAudioStream *stream, void *user,
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
 
-sb_audio *sb_audio_start(sb_ring *ring)
+/* Device disconnect (headphone unplug, BT route change): AAudio stops firing
+   data_cb, so the ring would fill and sb_ring_push would block the emu thread
+   forever. Mark the stream dead and flush the ring to unblock the producer;
+   the emu thread reopens the stream. Must not stop/close from this thread. */
+static void error_cb(AAudioStream *stream, void *user, aaudio_result_t error)
+{
+    (void)stream; (void)error;
+    struct sb_audio *a = user;
+    atomic_store(a->dead, true);
+    sb_ring_flush(a->ring);
+}
+
+sb_audio *sb_audio_start(sb_ring *ring, atomic_bool *dead)
 {
     AAudioStreamBuilder *b = NULL;
     if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return NULL;
@@ -25,6 +38,8 @@ sb_audio *sb_audio_start(sb_ring *ring)
     struct sb_audio *a = calloc(1, sizeof(*a));
     if (!a) { AAudioStreamBuilder_delete(b); return NULL; }
     a->ring = ring;
+    a->dead = dead;
+    atomic_store(dead, false);
 
     AAudioStreamBuilder_setDirection(b, AAUDIO_DIRECTION_OUTPUT);
     AAudioStreamBuilder_setSharingMode(b, AAUDIO_SHARING_MODE_SHARED);
@@ -33,6 +48,7 @@ sb_audio *sb_audio_start(sb_ring *ring)
     AAudioStreamBuilder_setChannelCount(b, 2);
     AAudioStreamBuilder_setSampleRate(b, SB_AUDIO_SAMPLE_RATE);
     AAudioStreamBuilder_setDataCallback(b, data_cb, a);
+    AAudioStreamBuilder_setErrorCallback(b, error_cb, a);
 
     aaudio_result_t r = AAudioStreamBuilder_openStream(b, &a->stream);
     AAudioStreamBuilder_delete(b);

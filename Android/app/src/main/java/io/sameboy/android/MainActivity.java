@@ -19,6 +19,7 @@ public class MainActivity extends AppCompatActivity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Library library;
     private LibraryUi.Model model;
+    private boolean scanning = false;   // tree scan in flight: adds are in memory, not yet saved
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
@@ -42,8 +43,14 @@ public class MainActivity extends AppCompatActivity {
 
     @Override protected void onResume() {
         super.onResume();
-        library.load();   // pick up a background scan's save / another instance's changes
+        // Reloading mid-scan would wipe the scan's unsaved in-memory adds (entries.clear()).
+        if (!scanning) library.load();   // pick up a background scan's save / another instance's changes
         refresh();
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        io.shutdown();   // idle single-thread executors are never GC'd; leaks a thread per recreation
     }
 
     private void refresh() { model.setGames(library.listSorted()); }
@@ -70,11 +77,13 @@ public class MainActivity extends AppCompatActivity {
 
         if (req == REQ_TREE) {
             Toast.makeText(this, R.string.scanning, Toast.LENGTH_SHORT).show();
+            scanning = true;
             io.execute(() -> {
                 int[] added = {0};
                 RomScanner.scanTree(this, uri, entry ->
                     ui.post(() -> { if (library.add(entry)) added[0]++; }));
                 ui.post(() -> {
+                    scanning = false;
                     library.save();
                     refresh();
                     Toast.makeText(this, getString(R.string.added_n, added[0]), Toast.LENGTH_SHORT).show();

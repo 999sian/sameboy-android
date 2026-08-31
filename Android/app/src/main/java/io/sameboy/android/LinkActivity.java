@@ -18,26 +18,28 @@ public final class LinkActivity extends AppCompatActivity {
     private final String[] names = { "Idle", "Listening", "Connecting", "Connected", "Error" };
     private final Runnable poll = new Runnable() {
         @Override public void run() {
-            if (ctx != 0) {
-                int st = NativeBridge.nativeLinkStatus(ctx);
-                model.setStatus(names[st >= 0 && st < names.length ? st : 0]);
-            }
+            if (dead()) { finish(); return; }
+            int st = NativeBridge.nativeLinkStatus(ctx);
+            model.setStatus(names[st >= 0 && st < names.length ? st : 0]);
             handler.postDelayed(this, 500);
         }
     };
+
+    /** EmulatorActivity destroyed beneath us → ctx freed; using it would be a native UAF. */
+    private boolean dead() { return ctx == 0 || ctx != EmulatorActivity.activeCtx; }
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         if (b != null) { finish(); return; }          // process-death: stale ctx
         ctx = getIntent().getLongExtra(EXTRA_CTX, 0);
-        if (ctx == 0) { finish(); return; }
+        if (ctx == 0 || ctx != EmulatorActivity.activeCtx) { finish(); return; }
 
         model = LinkUi.bind(this,
             "This device: " + localIp() + "  (port " + PORT + ")",
             new LinkUi.Callbacks() {
-                @Override public void onHost() { NativeBridge.nativeLinkListen(ctx, PORT); }
-                @Override public void onJoin(String ip) { NativeBridge.nativeLinkConnect(ctx, ip, PORT); }
-                @Override public void onDisconnect() { NativeBridge.nativeLinkDisconnect(ctx); }
+                @Override public void onHost() { if (!dead()) NativeBridge.nativeLinkListen(ctx, PORT); }
+                @Override public void onJoin(String ip) { if (!dead()) NativeBridge.nativeLinkConnect(ctx, ip, PORT); }
+                @Override public void onDisconnect() { if (!dead()) NativeBridge.nativeLinkDisconnect(ctx); }
                 @Override public void onBack() { finish(); }
             });
     }

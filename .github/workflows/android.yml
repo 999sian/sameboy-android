@@ -109,6 +109,14 @@ jobs:
         uses: android-actions/setup-android@v3
       - name: Install NDK
         run: sdkmanager "ndk;26.3.11579264"
+      # Same rgbds install as the build job — without it generateBootRoms silently
+      # skips and the RELEASE APK ships boot-ROM-less (white-screen on CGB titles).
+      - name: Install rgbds (boot ROMs)
+        run: |
+          curl -fsSL -o /tmp/rgbds.tar.xz \
+            https://github.com/gbdev/rgbds/releases/download/v0.7.0/rgbds-0.7.0-linux-x86_64.tar.xz
+          sudo tar xJf /tmp/rgbds.tar.xz -C /usr/local/bin rgbasm rgblink rgbfix rgbgfx
+          rgbasm --version
       # secrets are NOT available in step `if:` — map to env and gate in shell. Sets
       # SAMEBOY_KEYSTORE for the build only when the keystore secret is present; otherwise
       # the build falls back to the debug key (see app/build.gradle).
@@ -128,6 +136,15 @@ jobs:
           SAMEBOY_KEY_ALIAS: ${{ secrets.SAMEBOY_KEY_ALIAS }}
           SAMEBOY_KEY_PASSWORD: ${{ secrets.SAMEBOY_KEY_PASSWORD }}
         run: ./gradlew --no-daemon :app:assembleRelease
+      - name: Verify boot ROMs bundled
+        shell: bash
+        working-directory: Android
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          n=$(unzip -l "$APK" | grep -c 'assets/bootroms/.*\.bin')
+          echo "boot ROM .bin assets in APK: $n"
+          test "$n" -ge 5
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:

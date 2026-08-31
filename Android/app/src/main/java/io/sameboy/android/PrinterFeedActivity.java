@@ -41,13 +41,18 @@ public final class PrinterFeedActivity extends AppCompatActivity {
         // Intent extra is stale — dereferencing it would SIGSEGV. Bail to the launcher.
         if (b != null) { finish(); return; }
         ctx = getIntent().getLongExtra(EXTRA_CTX, 0);
-        if (ctx == 0) { finish(); return; }
+        // Stale extra (process death is caught above, but also require the session be live).
+        if (ctx == 0 || ctx != EmulatorActivity.activeCtx) { finish(); return; }
         bitmap = buildBitmap();
 
         PrinterUi.bind(this, bitmap, new PrinterUi.Callbacks() {
             @Override public void onSave() { saveToPictures(); }
             @Override public void onShare() { sharePng(); }
-            @Override public void onClear() { NativeBridge.nativePrinterClear(ctx); finish(); }
+            @Override public void onClear() {
+                // Emulator may have been destroyed beneath us; its ctx is then freed (UAF).
+                if (ctx == EmulatorActivity.activeCtx) NativeBridge.nativePrinterClear(ctx);
+                finish();
+            }
             @Override public void onBack() { finish(); }
         });
     }

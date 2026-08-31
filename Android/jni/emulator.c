@@ -260,6 +260,13 @@ sb_emulator *sb_emu_create(int model, const uint8_t *rom, size_t rom_len,
        clock). Kept small so the emu thread never runs far ahead of playback.
        The host test must therefore drain the ring as it steps frames. */
     e->audio = sb_ring_create(SB_AUDIO_SAMPLE_RATE / 10);
+    if (!e->audio) {   /* audio_cb would deref NULL on the first sample */
+        pthread_mutex_destroy(&e->printer_mtx);
+        pthread_cond_destroy(&e->frame_cv);
+        pthread_mutex_destroy(&e->fb_mtx);
+        free(e);
+        return NULL;
+    }
     e->back = 0;
     e->front_w = 160; e->front_h = 144;
 
@@ -291,6 +298,7 @@ void sb_emu_set_boot_rom(sb_emulator *e, int type, const uint8_t *data, size_t l
     e->boot[type].len = 0;
     if (data && len) {
         e->boot[type].data = malloc(len);
+        if (!e->boot[type].data) return;   /* keep "no boot ROM" state on OOM */
         memcpy(e->boot[type].data, data, len);
         e->boot[type].len = len;
     }
@@ -371,6 +379,7 @@ size_t sb_emu_save_battery(sb_emulator *e, uint8_t **out)
     int size = GB_save_battery_size(&e->gb);
     if (size <= 0) { *out = NULL; return 0; }
     uint8_t *buf = malloc(size);
+    if (!buf) { *out = NULL; return 0; }
     GB_save_battery_to_buffer(&e->gb, buf, size);
     *out = buf;
     return (size_t)size;

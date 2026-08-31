@@ -31,6 +31,10 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     public static final String EXTRA_ZIP_ENTRY = "io.sameboy.zipEntry";
     public static final String EXTRA_ROM_KEY = "io.sameboy.romKey";
     private long ctx = 0;
+    /** The live native session, 0 when none. Main-thread only. Printer/Link activities validate
+     *  their Intent ctx against this: EmulatorActivity can be destroyed beneath them (e.g.
+     *  "Don't keep activities"), freeing ctx — calling native with the stale pointer is a UAF. */
+    static long activeCtx = 0;
     private File savFile;
     private String romName = "rom";
     private boolean menuOpen = false;
@@ -104,8 +108,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         String zipEntry = getIntent().getStringExtra(EXTRA_ZIP_ENTRY);
         String keyExtra = getIntent().getStringExtra(EXTRA_ROM_KEY);
         // Save key: CRC for library launches, display-name for external one-shot opens (M2 behavior).
-        romName = (keyExtra != null && !keyExtra.isEmpty()) ? keyExtra : displayName(data);
-        savFile = SaveStore.savFile(this, romName);
+        String keyOrNull = (keyExtra != null && !keyExtra.isEmpty()) ? keyExtra : null;
         settings = new Settings(this);
         pad = new GamepadMapper(this);
         if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -115,8 +118,11 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         }
 
-        // Read the ROM off the main thread (SAF read can ANR on slow providers).
+        // Read the ROM (and resolve the display name — a synchronous binder call into a
+        // possibly-slow DocumentsProvider) off the main thread; SAF I/O can ANR.
         io.execute(() -> {
+            romName = keyOrNull != null ? keyOrNull : displayName(data);
+            savFile = SaveStore.savFile(this, romName);
             byte[] rom = readRom(data, zipEntry);
             byte[] sav = SaveStore.read(savFile);
             runOnUiThread(() -> finishSetup(rom, sav));
@@ -138,6 +144,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             finish();
             return;
         }
+        activeCtx = ctx;
 
         settings.apply(ctx);    // batch Core settings + volume before threads start
         FrameLayout root = new FrameLayout(this);
@@ -559,7 +566,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
 
     @Override protected void onDestroy() {
         super.onDestroy();
-        if (ctx != 0) { NativeBridge.nativeDestroy(ctx); ctx = 0; }
+        if (ctx != 0) { if (activeCtx == ctx) activeCtx = 0; NativeBridge.nativeDestroy(ctx); ctx = 0; }
+        io.shutdown();   // idle single-thread executors are never GC'd; one leaked per launch
     }
 
     private byte[] readAll(Uri uri) {

@@ -8,6 +8,6 @@ sb_renderer *sb_render_start(ANativeWindow *win, sb_emulator *emu)
 { (void)win; (void)emu; return (sb_renderer *)0; }
 void sb_render_stop(sb_renderer *r) { (void)r; }
 
-sb_audio *sb_audio_start(sb_ring *ring) { (void)ring; return (sb_audio *)0; }
+sb_audio *sb_audio_start(sb_ring *ring, atomic_bool *dead) { (void)ring; (void)dead; return (sb_audio *)0; }
 void sb_audio_set_paused(sb_audio *a, int paused) { (void)a; (void)paused; }
 void sb_audio_stop(sb_audio *a) { (void)a; }

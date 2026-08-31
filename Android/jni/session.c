@@ -22,6 +22,7 @@ struct sb_session {
     atomic_bool turbo;          /* consumed by emu loop */
     atomic_bool rewinding;      /* consumed by emu loop */
     atomic_bool audio_drop;     /* read by audio_cb via sb_emu_set_audio_drop */
+    atomic_bool audio_dead;     /* set by AAudio error_cb on disconnect; emu loop reopens */
     atomic_bool battery_dirty;  /* published by emu loop, read by JNI */
     atomic_int volume;          /* 0..256; read by emu audio path */
     int parked;                 /* emu thread is waiting in pause_cv (under pause_mtx) */
@@ -61,6 +62,22 @@ static void *emu_loop(void *arg)
            harmless, since no serial runs while paused. */
         sb_transport *pt = atomic_exchange(&s->link_pending, NULL);
         if (pt) sb_emu_link_set(s->emu, sb_link_create(pt));
+
+        /* AAudio stream disconnected (route change): its callbacks are dead, so
+           nothing pops the ring anymore. Close it and reopen on the new default
+           device from this thread (AAudio forbids close from the error callback;
+           error_cb flushed the ring so a blocked push already got unstuck). */
+        if (s->audio && atomic_load(&s->audio_dead)) {
+            pthread_mutex_lock(&s->pause_mtx);
+            sb_audio *dead = s->audio;   /* unlink under pause_mtx vs. pause/stop */
+            s->audio = NULL;
+            pthread_mutex_unlock(&s->pause_mtx);
+            sb_audio_stop(dead);
+            sb_audio *fresh = sb_audio_start(sb_emu_audio_ring(s->emu), &s->audio_dead);
+            pthread_mutex_lock(&s->pause_mtx);
+            s->audio = fresh;            /* NULL → silent fallback pacing below */
+            pthread_mutex_unlock(&s->pause_mtx);
+        }
 
         int turbo = atomic_load(&s->turbo) ? 1 : 0;
         if (turbo != applied_turbo) {
@@ -109,6 +126,7 @@ sb_session *sb_session_create(int model, const uint8_t *rom, size_t rom_len,
     atomic_init(&s->turbo, false);
     atomic_init(&s->rewinding, false);
     atomic_init(&s->audio_drop, false);
+    atomic_init(&s->audio_dead, false);
     atomic_init(&s->battery_dirty, false);
     atomic_init(&s->volume, 256);
     sb_emu_set_volume_ptr(emu, &s->volume);
@@ -365,7 +383,7 @@ void sb_session_start(sb_session *s, ANativeWindow *win)
     s->win = win;
     atomic_store(&s->running, true);
     s->paused = 0; /* pre-thread: no lock needed, pthread_create provides the happens-before */
-    s->audio = sb_audio_start(sb_emu_audio_ring(s->emu));
+    s->audio = sb_audio_start(sb_emu_audio_ring(s->emu), &s->audio_dead);
     if (!s->audio) {
         __android_log_print(ANDROID_LOG_WARN, "SameBoy",
                             "audio start failed; continuing without audio");
