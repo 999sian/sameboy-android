@@ -25,6 +25,7 @@ struct sb_session {
     atomic_bool audio_dead;     /* set by AAudio error_cb on disconnect; emu loop reopens */
     atomic_bool battery_dirty;  /* published by emu loop, read by JNI */
     atomic_int volume;          /* 0..256; read by emu audio path */
+    atomic_int filter;          /* 0 off, 1 LCD; read by the render thread */
     int parked;                 /* emu thread is waiting in pause_cv (under pause_mtx) */
     pthread_mutex_t pause_mtx;
     pthread_cond_t pause_cv;
@@ -129,6 +130,7 @@ sb_session *sb_session_create(int model, const uint8_t *rom, size_t rom_len,
     atomic_init(&s->audio_dead, false);
     atomic_init(&s->battery_dirty, false);
     atomic_init(&s->volume, 256);
+    atomic_init(&s->filter, 0);
     sb_emu_set_volume_ptr(emu, &s->volume);
     sb_emu_set_audio_drop(emu, &s->audio_drop);
     pthread_mutex_init(&s->pause_mtx, NULL);
@@ -256,6 +258,12 @@ void sb_session_set_volume(sb_session *s, int volume_256)
     if (volume_256 < 0) volume_256 = 0;
     if (volume_256 > 256) volume_256 = 256;
     atomic_store(&s->volume, volume_256);
+}
+
+void sb_session_set_filter(sb_session *s, int mode)
+{
+    if (!s) return;
+    atomic_store(&s->filter, mode == 1 ? 1 : 0);   /* unknown mode → off */
 }
 
 int sb_session_rumble_amplitude(sb_session *s)
@@ -388,7 +396,7 @@ void sb_session_start(sb_session *s, ANativeWindow *win)
         __android_log_print(ANDROID_LOG_WARN, "SameBoy",
                             "audio start failed; continuing without audio");
     }
-    s->render = sb_render_start(win, s->emu);
+    s->render = sb_render_start(win, s->emu, &s->filter);
     if (pthread_create(&s->emu_thread, NULL, emu_loop, s) != 0) {
         atomic_store(&s->running, false);
         sb_render_stop(s->render); s->render = NULL;

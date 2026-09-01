@@ -12,6 +12,7 @@
 struct sb_renderer {
     ANativeWindow *win;
     sb_emulator *emu;
+    const atomic_int *filter;      /* owner-provided; NULL = always off */
     pthread_t thread;
     volatile int running;
     uint32_t staging[SB_FB_MAX];   /* render-owned copy; filled under fb_mtx */
@@ -23,6 +24,22 @@ static const char *VS =
 static const char *FS =
     "precision mediump float;varying vec2 vTex;uniform sampler2D uTex;"
     "void main(){gl_FragColor=texture2D(uTex,vTex);}";
+/* DMG dot matrix: darken the first output pixel of every source pixel along each
+   axis, so each GB pixel reads as an LCD cell with a gutter. uSrc = source
+   resolution, uGap = one output pixel expressed in source-pixel units (1/scale),
+   so the grid is exactly 1 px wide at any scale. No smoothing: at integer scale the
+   lines are already pixel-aligned, and a soft gutter of this width falls entirely
+   between sample centers and renders invisible (verified numerically, scales 2..8). */
+static const char *FS_LCD =
+    "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+    "precision highp float;\n"
+    "#else\n"
+    "precision mediump float;\n"
+    "#endif\n"
+    "varying vec2 vTex;uniform sampler2D uTex;uniform vec2 uSrc;uniform float uGap;"
+    "void main(){"
+    "vec2 s=step(vec2(uGap),fract(vTex*uSrc));"
+    "gl_FragColor=vec4(texture2D(uTex,vTex).rgb*(0.75+0.25*min(s.x,s.y)),1.0);}";
 
 static GLuint compile(GLenum t, const char *src)
 {
@@ -30,6 +47,17 @@ static GLuint compile(GLenum t, const char *src)
     glShaderSource(s, 1, &src, NULL);
     glCompileShader(s);
     return s;
+}
+
+static GLuint build(const char *fs)
+{
+    GLuint p = glCreateProgram();
+    glAttachShader(p, compile(GL_VERTEX_SHADER, VS));
+    glAttachShader(p, compile(GL_FRAGMENT_SHADER, fs));
+    glBindAttribLocation(p, 0, "aPos");
+    glBindAttribLocation(p, 1, "aTex");
+    glLinkProgram(p);
+    return p;
 }
 
 static void *render_thread(void *arg)
@@ -57,13 +85,10 @@ static void *render_thread(void *arg)
         return NULL;
     }
 
-    GLuint prog = glCreateProgram();
-    glAttachShader(prog, compile(GL_VERTEX_SHADER, VS));
-    glAttachShader(prog, compile(GL_FRAGMENT_SHADER, FS));
-    glBindAttribLocation(prog, 0, "aPos");
-    glBindAttribLocation(prog, 1, "aTex");
-    glLinkProgram(prog);
-    glUseProgram(prog);
+    GLuint prog = build(FS);
+    GLuint prog_lcd = build(FS_LCD);
+    GLint u_src = glGetUniformLocation(prog_lcd, "uSrc");
+    GLint u_gap = glGetUniformLocation(prog_lcd, "uGap");
 
     GLuint tex; glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -97,17 +122,30 @@ static void *render_thread(void *arg)
         eglQuerySurface(dpy, surf, EGL_WIDTH, &sw);
         eglQuerySurface(dpy, surf, EGL_HEIGHT, &sh);
 
-        /* aspect-correct integer letterbox */
-        int scale = 1;
-        int sx = (int)(sw / w), sy = (int)(sh / h);
-        scale = sx < sy ? sx : sy;
-        if (scale < 1) scale = 1;
-        int vw = (int)w * scale, vh = (int)h * scale;
+        /* aspect-correct letterbox: fractional so fullscreen truly fills the panel.
+           Windowed console layouts pass exact 160/144-multiple surfaces, so the
+           min-of-ratios is an exact integer there -> bit-identical crisp scaling. */
+        float scale = (float)sw / w;
+        float syf = (float)sh / h;
+        if (syf < scale) scale = syf;
+        if (scale < 1.0f) scale = 1.0f;
+        int vw = (int)(w * scale + 0.5f), vh = (int)(h * scale + 0.5f);
         glViewport((sw - vw) / 2, (sh - vh) / 2, vw, vh);
 
         const GLfloat quad[] = { -1,-1, 1,-1, -1,1, 1,1 };
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, quad);
+
+        /* Scale 1 has no spare pixel for a gutter (uGap would be 1.0, darkening every
+           pixel uniformly) — fall back to the plain blit. */
+        if ((r->filter ? atomic_load(r->filter) : 0) == 1 && scale >= 2.0f) {
+            glUseProgram(prog_lcd);
+            glUniform2f(u_src, (GLfloat)w, (GLfloat)h);
+            glUniform1f(u_gap, 1.0f / (GLfloat)scale);
+        }
+        else {
+            glUseProgram(prog);
+        }
 
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -122,11 +160,11 @@ static void *render_thread(void *arg)
     return NULL;
 }
 
-sb_renderer *sb_render_start(ANativeWindow *win, sb_emulator *emu)
+sb_renderer *sb_render_start(ANativeWindow *win, sb_emulator *emu, const atomic_int *filter)
 {
     sb_renderer *r = calloc(1, sizeof(*r));
     if (!r) return NULL;
-    r->win = win; r->emu = emu; r->running = 1;
+    r->win = win; r->emu = emu; r->filter = filter; r->running = 1;
     if (pthread_create(&r->thread, NULL, render_thread, r) != 0) { free(r); return NULL; }
     return r;
 }

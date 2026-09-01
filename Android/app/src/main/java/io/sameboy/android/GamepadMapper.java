@@ -8,16 +8,20 @@ import android.view.MotionEvent;
 
 /** Hardware-gamepad → GB-key mapping (keycode table + prefs) and axis→d-pad translation. */
 final class GamepadMapper {
-    // GB key indices (match NativeBridge)
+    // GB key indices (match NativeBridge), plus MENU: a frontend action, never sent to the Core.
     static final int RIGHT = 0, LEFT = 1, UP = 2, DOWN = 3, A = 4, B = 5, SELECT = 6, START = 7;
-    static final int KEYS = 8;
-    static final String[] GB_NAMES = { "Right", "Left", "Up", "Down", "A", "B", "Select", "Start" };
+    static final int MENU = 8;
+    static final int KEYS = 9;
+    static final String[] GB_NAMES = { "Right", "Left", "Up", "Down", "A", "B", "Select", "Start", "Menu" };
 
     private static final int[] DEFAULTS = {
         KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT,
         KeyEvent.KEYCODE_DPAD_UP,    KeyEvent.KEYCODE_DPAD_DOWN,
         KeyEvent.KEYCODE_BUTTON_A,   KeyEvent.KEYCODE_BUTTON_B,
         KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_START,
+        // L1: present on every gamepad and unused by the Game Boy, so the in-game menu is
+        // always reachable when the on-screen controls are hidden.
+        KeyEvent.KEYCODE_BUTTON_L1,
     };
 
     private final SharedPreferences p;
@@ -64,13 +68,18 @@ final class GamepadMapper {
             || keycode == KeyEvent.KEYCODE_DPAD_LEFT || keycode == KeyEvent.KEYCODE_DPAD_RIGHT;
     }
 
+    /** True when a physical controller is attached: gamepad, joystick, or a real d-pad device.
+     *  SOURCE_DPAD must skip virtual devices — Android's synthetic keyboard reports DPAD on every
+     *  device, which would make "Auto" hide the touch controls even with no controller present. */
     static boolean anyGamepadConnected() {
         for (int id : InputDevice.getDeviceIds()) {
             InputDevice d = InputDevice.getDevice(id);
             if (d == null) continue;
             int src = d.getSources();
             if ((src & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
-                || (src & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) return true;
+                || (src & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+                || ((src & InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD && !d.isVirtual()))
+                return true;
         }
         return false;
     }

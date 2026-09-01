@@ -16,8 +16,17 @@ final class GBLayout {
     boolean drawLogo = false;
     float logoY, logoSize;
 
-    GBLayout(int w, int h, float dp) {
+    GBLayout(int w, int h, float dp, boolean fullscreen) {
         landscape = w > h;
+        if (fullscreen) {
+            // Controls hidden: the whole display goes to the screen — largest centered
+            // aspect-correct fit, no console body. Control points stay unused (0,0).
+            float s = Math.min(w / 160f, h / 144f);
+            float sw = 160f * s, sh = 144f * s;
+            screenRect.set((w - sw) / 2f, (h - sh) / 2f, (w + sw) / 2f, (h + sh) / 2f);
+            bezelWidth = 0f;
+            return;
+        }
         if (landscape) {
             // height-filling integer-scaled screen, >=164dp wings for controls
             float sh = (float) Math.floor(h / 144f) * 144f;

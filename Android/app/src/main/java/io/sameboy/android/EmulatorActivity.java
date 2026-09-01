@@ -41,6 +41,10 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private boolean printerConnected = false;
     private Settings settings;
     private TouchOverlayView overlay;
+    private FrameLayout root;
+    private EmulatorSurfaceView surface;
+    private FrameLayout.LayoutParams surfaceLp;
+    private boolean controlsHidden = false;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Runnable batteryPoll = new Runnable() {
@@ -68,9 +72,9 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         }
     };
     private final InputManager.InputDeviceListener padListener = new InputManager.InputDeviceListener() {
-        @Override public void onInputDeviceAdded(int id) { refreshOverlayVisibility(); }
-        @Override public void onInputDeviceRemoved(int id) { releaseAllKeys(); refreshOverlayVisibility(); }
-        @Override public void onInputDeviceChanged(int id) { refreshOverlayVisibility(); }
+        @Override public void onInputDeviceAdded(int id) { refreshControlsVisibility(); }
+        @Override public void onInputDeviceRemoved(int id) { releaseAllKeys(); refreshControlsVisibility(); }
+        @Override public void onInputDeviceChanged(int id) { refreshControlsVisibility(); }
     };
     private static final int REQ_CAMERA = 42;
     private android.hardware.camera2.CameraDevice cameraDevice;
@@ -147,10 +151,10 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         activeCtx = ctx;
 
         settings.apply(ctx);    // batch Core settings + volume before threads start
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
         root.setBackgroundColor(android.graphics.Color.BLACK);
-        EmulatorSurfaceView surface = new EmulatorSurfaceView(this, this);
-        FrameLayout.LayoutParams surfaceLp = new FrameLayout.LayoutParams(0, 0);
+        surface = new EmulatorSurfaceView(this, this);
+        surfaceLp = new FrameLayout.LayoutParams(0, 0);
         overlay = new TouchOverlayView(this, new TouchOverlayView.ControlListener() {
             @Override public void onKey(int k, boolean pressed) {
                 if (ctx != 0) NativeBridge.nativeSetKey(ctx, k, pressed);
@@ -166,12 +170,6 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                         if (pressed && !menuOpen) openMenu(); break;
                 }
             }
-        }, r -> {
-            surfaceLp.width = Math.round(r.width());
-            surfaceLp.height = Math.round(r.height());
-            surfaceLp.leftMargin = Math.round(r.left);
-            surfaceLp.topMargin = Math.round(r.top);
-            surface.setLayoutParams(surfaceLp);
         });
         overlay.setOpacity(settings.buttonOpacity());
         overlay.setHaptics(settings.haptics());
@@ -180,8 +178,11 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         root.addView(surface, surfaceLp);
         root.addView(overlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        /* Screen geometry follows the root's size: in fill-screen mode the overlay is GONE and
+           can't report it. Also covers rotation and control-visibility switches. */
+        root.addOnLayoutChangeListener((v, l, t, r, b, pl, pt, pr, pb) -> applyScreenGeometry());
         setContentView(root);
-        refreshOverlayVisibility();
+        refreshControlsVisibility();
     }
 
     private byte[] readRom(Uri uri, String zipEntry) {
@@ -206,6 +207,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         }
         if (ctx != 0) {
             NativeBridge.nativeStart(ctx, s);
+            NativeBridge.nativeSetFilter(ctx, settings.filter());
             if (menuOpen) NativeBridge.nativePause(ctx, true);
         }
     }
@@ -283,6 +285,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         pinRefreshRate();   /* reassert 60Hz clamp; window attrs can reset across pause */
         if (ctx != 0 && !menuOpen) {
             settings.apply(ctx);                       // self-parks once; picks up Settings changes
+            NativeBridge.nativeSetFilter(ctx, settings.filter());
             if (overlay != null) {
                 overlay.setOpacity(settings.buttonOpacity());
                 overlay.setHaptics(settings.haptics());
@@ -297,7 +300,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         if (im != null) im.registerInputDeviceListener(padListener, handler);
         handler.postDelayed(rumblePoll, 50);
         handler.postDelayed(cameraPoll, 500);
-        refreshOverlayVisibility();
+        refreshControlsVisibility();
     }
 
     private void ensureCameraPermissionAndStart() {
@@ -442,6 +445,11 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         int gb = (ctx != 0) ? pad.gbKeyForKeycode(event.getKeyCode()) : -1;
+        if (gb == GamepadMapper.MENU) {   // frontend action, never a Core key
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0 && !menuOpen)
+                openMenu();
+            return true;
+        }
         if (gb >= 0 && event.getRepeatCount() == 0) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) { NativeBridge.nativeSetKey(ctx, gb, true); return true; }
             if (event.getAction() == KeyEvent.ACTION_UP)   { NativeBridge.nativeSetKey(ctx, gb, false); return true; }
@@ -485,8 +493,51 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         for (int i = 0; i < axisState.length; i++) axisState[i] = false;
     }
 
-    private void refreshOverlayVisibility() {
-        if (overlay != null) overlay.setControlsHidden(GamepadMapper.anyGamepadConnected());
+    /** On-screen controls: Auto (hide while a physical gamepad is connected) / Always / Never.
+     *  Hidden means GONE — the emulator screen then gets the whole display (see GBLayout's
+     *  fullscreen branch) and the menu is reached with the gamepad's Menu binding. */
+    private void refreshControlsVisibility() {
+        boolean hide;
+        switch (settings.onscreenControls()) {
+            case 1:  hide = false; break;                          // Always
+            case 2:  hide = true; break;                           // Never
+            default: hide = GamepadMapper.anyGamepadConnected();   // Auto
+        }
+        controlsHidden = hide;
+        if (overlay != null) {
+            if (hide) overlay.releaseAll();   // no ACTION_CANCEL arrives for a held touch button
+            overlay.setVisibility(hide ? View.GONE : View.VISIBLE);
+        }
+        setSystemBarsHidden(hide);
+        applyScreenGeometry();
+    }
+
+    /** Size/place the emulator surface for the current mode: the console well when the touch
+     *  controls are up, the largest aspect-correct fit of the display when they're hidden. */
+    private void applyScreenGeometry() {
+        if (root == null || surface == null) return;
+        int w = root.getWidth(), h = root.getHeight();
+        if (w <= 0 || h <= 0) return;   // pre-layout; the layout listener calls back
+        android.graphics.RectF r = new GBLayout(
+                w, h, getResources().getDisplayMetrics().density, controlsHidden).screenRect;
+        int nw = Math.round(r.width()), nh = Math.round(r.height());
+        int nl = Math.round(r.left), nt = Math.round(r.top);
+        if (nw == surfaceLp.width && nh == surfaceLp.height
+                && nl == surfaceLp.leftMargin && nt == surfaceLp.topMargin) return;  // no relayout loop
+        surfaceLp.width = nw; surfaceLp.height = nh;
+        surfaceLp.leftMargin = nl; surfaceLp.topMargin = nt;
+        surface.setLayoutParams(surfaceLp);
+    }
+
+    /** With the touch controls gone the whole panel is the screen, so drop the status/nav bars
+     *  too. setSystemUiVisibility is deprecated but is the one code path that works across
+     *  minSdk 26..targetSdk 34 (no edge-to-edge enforcement below 35). */
+    @SuppressWarnings("deprecation")
+    private void setSystemBarsHidden(boolean hidden) {
+        getWindow().getDecorView().setSystemUiVisibility(hidden
+                ? View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_FULLSCREEN
+                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                : 0);
     }
 
     private void openMenu() {

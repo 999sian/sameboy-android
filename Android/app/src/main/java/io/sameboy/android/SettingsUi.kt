@@ -62,7 +62,7 @@ object SettingsUi {
 }
 
 private val MODELS = intArrayOf(
-    NativeBridge.MODEL_DMG_B, NativeBridge.MODEL_CGB_E, NativeBridge.MODEL_AGB,
+    NativeBridge.MODEL_DMG_B, NativeBridge.MODEL_CGB_E, NativeBridge.MODEL_AGB, NativeBridge.MODEL_SGB,
 )
 private fun modelToIndex(m: Int) = MODELS.indexOf(m).let { if (it < 0) 1 else it }  // unknown -> CGB (old default)
 
@@ -86,6 +86,8 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
     var theme by remember { mutableIntStateOf(s.themeMode()) }
     var console by remember { mutableIntStateOf(s.consoleTheme()) }
     var swipeDpad by remember { mutableStateOf(s.swipeDpad()) }
+    var filter by remember { mutableIntStateOf(s.filter()) }
+    var onscreen by remember { mutableIntStateOf(s.onscreenControls()) }
 
     ReadableContent {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -95,7 +97,8 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
             {
                 PickerRow(
                     "Model (next launch)",
-                    listOf("Game Boy (DMG)", "Game Boy Color (CGB)", "Game Boy Advance (AGB)"),
+                    listOf("Game Boy (DMG)", "Game Boy Color (CGB)", "Game Boy Advance (AGB)",
+                           "Super Game Boy (SGB)"),
                     model,
                 ) { model = it; s.setModel(MODELS[it]) }
             },
@@ -137,6 +140,11 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
                     else { palette = i; s.setPaletteBuiltin(i) }
                 }
             },
+            {
+                PickerRow("Screen filter", listOf("Off", "LCD"), filter) {
+                    filter = it; s.setFilter(it)
+                }
+            },
         ))
 
         CupertinoSection(header = "Audio", rows = listOf(
@@ -161,6 +169,11 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
             },
             { ToggleRow("Haptics", haptics) { haptics = it; s.setHaptics(it) } },
             { ToggleRow("Swipe d-pad", swipeDpad) { swipeDpad = it; s.setSwipeDpad(it) } },
+            {
+                PickerRow("On-screen controls", listOf("Auto", "Always", "Never"), onscreen) {
+                    onscreen = it; s.setOnscreenControls(it)
+                }
+            },
             {
                 PickerRow(
                     stringResource(R.string.rumble),

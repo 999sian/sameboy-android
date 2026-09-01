@@ -231,6 +231,10 @@ Java_io_sameboy_android_NativeBridge_nativeSetVolume(JNIEnv *env, jclass c, jlon
 { (void)env; (void)c; sb_session_set_volume((sb_session *)(uintptr_t)ctx, volume256); }
 
 JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSetFilter(JNIEnv *env, jclass c, jlong ctx, jint mode)
+{ (void)env; (void)c; sb_session_set_filter((sb_session *)(uintptr_t)ctx, mode); }
+
+JNIEXPORT void JNICALL
 Java_io_sameboy_android_NativeBridge_nativeSetPalette(JNIEnv *env, jclass c, jlong ctx,
         jint builtinIndex, jint c0, jint c1, jint c2, jint c3)
 {

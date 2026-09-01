@@ -22,7 +22,6 @@ class TouchOverlayView extends View {
         void onKey(int gbKey, boolean pressed);
         void onSpecial(int what, boolean pressed);
     }
-    interface ScreenRectListener { void onScreenRect(RectF r); }
     static final int SPECIAL_REWIND = 8, SPECIAL_TURBO = 9, SPECIAL_MENU = 10;
 
     // theme (iOS GBTheme default)
@@ -31,7 +30,6 @@ class TouchOverlayView extends View {
     private static final int BRAND = 0xFF00468D;
 
     private final ControlListener listener;
-    private final ScreenRectListener rectListener;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint spritePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final float dp = getResources().getDisplayMetrics().density;
@@ -44,17 +42,15 @@ class TouchOverlayView extends View {
     private final int[] keyCount = new int[11];
     private float opacity = 0.6f;
     private boolean haptics = true;
-    private boolean controlsHidden = false;
     private boolean darkConsole = false;
     private boolean swipePad = false;
     private int bodyTop = BODY_TOP, bodyBottom = BODY_BOTTOM;
     private int swipePointerId = -1;
     private float swipeOriginX, swipeOriginY;
 
-    TouchOverlayView(Context ctx, ControlListener l, ScreenRectListener r) {
+    TouchOverlayView(Context ctx, ControlListener l) {
         super(ctx);
         listener = l;
-        rectListener = r;
         loadSprites();
     }
 
@@ -122,11 +118,9 @@ class TouchOverlayView extends View {
 
     void setOpacity(float a) { opacity = a; invalidate(); }
     void setHaptics(boolean on) { haptics = on; }
-    void setControlsHidden(boolean hidden) { controlsHidden = hidden; invalidate(); }
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
-        layout = new GBLayout(w, h, dp);
-        if (rectListener != null) rectListener.onScreenRect(new RectF(layout.screenRect));
+        layout = new GBLayout(w, h, dp, false);
         invalidate();
     }
 
@@ -139,7 +133,6 @@ class TouchOverlayView extends View {
     private int maskAt(float x, float y) {
         if (layout == null) return 0;
         if (dist2(x, y, layout.menu) < sq(30f * dp)) return MASK_MENU;
-        if (controlsHidden) return 0;
         if (dist2(x, y, layout.rewind) < sq(34f * dp)) return MASK_REWIND;
         if (dist2(x, y, layout.turbo) < sq(34f * dp)) return MASK_TURBO;
         if (dist2(x, y, layout.a) < sq(44f * dp)) return 1 << NativeBridge.KEY_A;
@@ -208,7 +201,8 @@ class TouchOverlayView extends View {
         invalidate();
     }
 
-    private void releaseAll() {
+    /** Drop every held touch key (also called when the controls are hidden mid-press). */
+    void releaseAll() {
         for (Integer id : new java.util.ArrayList<>(pointerMask.keySet())) applyMask(id, 0);
         for (int i = 0; i < keyCount.length; i++) keyCount[i] = 0;
         invalidate();
@@ -221,7 +215,7 @@ class TouchOverlayView extends View {
                 int idx = e.getActionIndex();
                 int id = e.getPointerId(idx);
                 float x = e.getX(idx), y = e.getY(idx);
-                if (swipePad && swipePointerId == -1 && !controlsHidden && inDpadSquare(x, y)) {
+                if (swipePad && swipePointerId == -1 && inDpadSquare(x, y)) {
                     swipePointerId = id;
                     swipeOriginX = x; swipeOriginY = y;
                     applyMask(id, 0);                    // no direction until movement
@@ -317,47 +311,43 @@ class TouchOverlayView extends View {
             paint.setTextAlign(Paint.Align.CENTER);
             c.drawText("SAMEBOY", w / 2f, layout.logoY + layout.logoSize, paint);
         }
-        if (!controlsHidden) {
-            drawRotatedLabel(c, "A", layout.a, 24f * dp, 40f * dp, Typeface.DEFAULT_BOLD);
-            drawRotatedLabel(c, "B", layout.b, 24f * dp, 40f * dp, Typeface.DEFAULT_BOLD);
-            float selDist = (layout.compact ? 22f : 30f) * dp;   // clear the pills below in compact
-            drawRotatedLabel(c, "SELECT", layout.select, 14f * dp, selDist, Typeface.DEFAULT_BOLD);
-            drawRotatedLabel(c, "START", layout.start, 14f * dp, selDist, Typeface.DEFAULT_BOLD);
-        }
+        drawRotatedLabel(c, "A", layout.a, 24f * dp, 40f * dp, Typeface.DEFAULT_BOLD);
+        drawRotatedLabel(c, "B", layout.b, 24f * dp, 40f * dp, Typeface.DEFAULT_BOLD);
+        float selDist = (layout.compact ? 22f : 30f) * dp;   // clear the pills below in compact
+        drawRotatedLabel(c, "SELECT", layout.select, 14f * dp, selDist, Typeface.DEFAULT_BOLD);
+        drawRotatedLabel(c, "START", layout.start, 14f * dp, selDist, Typeface.DEFAULT_BOLD);
 
         // controls layer (respects opacity setting)
         int alpha = (int) (opacity * 255);
         spritePaint.setAlpha(alpha);
-        if (!controlsHidden) {
-            int held = heldMask();
-            // d-pad + rotated shadow
-            drawSpriteCentered(c, dpadBmp, layout.dpad, 147f * dp, 151f * dp);
-            int dmask = held & (1 << NativeBridge.KEY_RIGHT | 1 << NativeBridge.KEY_LEFT
-                              | 1 << NativeBridge.KEY_UP | 1 << NativeBridge.KEY_DOWN);
-            float rot = Float.NaN; boolean diag = false;
-            if (dmask == (1 << NativeBridge.KEY_RIGHT)) rot = 0;
-            else if (dmask == (1 << NativeBridge.KEY_RIGHT | 1 << NativeBridge.KEY_DOWN)) { rot = 0; diag = true; }
-            else if (dmask == (1 << NativeBridge.KEY_DOWN)) rot = 90;
-            else if (dmask == (1 << NativeBridge.KEY_LEFT | 1 << NativeBridge.KEY_DOWN)) { rot = 90; diag = true; }
-            else if (dmask == (1 << NativeBridge.KEY_LEFT)) rot = 180;
-            else if (dmask == (1 << NativeBridge.KEY_LEFT | 1 << NativeBridge.KEY_UP)) { rot = 180; diag = true; }
-            else if (dmask == (1 << NativeBridge.KEY_UP)) rot = -90;
-            else if (dmask == (1 << NativeBridge.KEY_RIGHT | 1 << NativeBridge.KEY_UP)) { rot = -90; diag = true; }
-            if (!Float.isNaN(rot)) {
-                c.save();
-                c.rotate(rot, layout.dpad.x, layout.dpad.y);
-                drawSpriteCentered(c, diag ? dpadShadowDiag : dpadShadow, layout.dpad, 147f * dp, 147f * dp);
-                c.restore();
-            }
-            // A/B + Select/Start with pressed swaps
-            drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_A) != 0 ? buttonPressedBmp : buttonBmp, layout.a, 75f * dp, 79f * dp);
-            drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_B) != 0 ? buttonPressedBmp : buttonBmp, layout.b, 75f * dp, 79f * dp);
-            drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_SELECT) != 0 ? button2PressedBmp : button2Bmp, layout.select, 76f * dp, 76f * dp);
-            drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_START) != 0 ? button2PressedBmp : button2Bmp, layout.start, 76f * dp, 76f * dp);
-            // rewind/turbo pills
-            drawPill(c, layout.rewind, "<<", keyCount[SPECIAL_REWIND] > 0, alpha);
-            drawPill(c, layout.turbo, ">>", keyCount[SPECIAL_TURBO] > 0, alpha);
+        int held = heldMask();
+        // d-pad + rotated shadow
+        drawSpriteCentered(c, dpadBmp, layout.dpad, 147f * dp, 151f * dp);
+        int dmask = held & (1 << NativeBridge.KEY_RIGHT | 1 << NativeBridge.KEY_LEFT
+                          | 1 << NativeBridge.KEY_UP | 1 << NativeBridge.KEY_DOWN);
+        float rot = Float.NaN; boolean diag = false;
+        if (dmask == (1 << NativeBridge.KEY_RIGHT)) rot = 0;
+        else if (dmask == (1 << NativeBridge.KEY_RIGHT | 1 << NativeBridge.KEY_DOWN)) { rot = 0; diag = true; }
+        else if (dmask == (1 << NativeBridge.KEY_DOWN)) rot = 90;
+        else if (dmask == (1 << NativeBridge.KEY_LEFT | 1 << NativeBridge.KEY_DOWN)) { rot = 90; diag = true; }
+        else if (dmask == (1 << NativeBridge.KEY_LEFT)) rot = 180;
+        else if (dmask == (1 << NativeBridge.KEY_LEFT | 1 << NativeBridge.KEY_UP)) { rot = 180; diag = true; }
+        else if (dmask == (1 << NativeBridge.KEY_UP)) rot = -90;
+        else if (dmask == (1 << NativeBridge.KEY_RIGHT | 1 << NativeBridge.KEY_UP)) { rot = -90; diag = true; }
+        if (!Float.isNaN(rot)) {
+            c.save();
+            c.rotate(rot, layout.dpad.x, layout.dpad.y);
+            drawSpriteCentered(c, diag ? dpadShadowDiag : dpadShadow, layout.dpad, 147f * dp, 147f * dp);
+            c.restore();
         }
+        // A/B + Select/Start with pressed swaps
+        drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_A) != 0 ? buttonPressedBmp : buttonBmp, layout.a, 75f * dp, 79f * dp);
+        drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_B) != 0 ? buttonPressedBmp : buttonBmp, layout.b, 75f * dp, 79f * dp);
+        drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_SELECT) != 0 ? button2PressedBmp : button2Bmp, layout.select, 76f * dp, 76f * dp);
+        drawSpriteCentered(c, (held & 1 << NativeBridge.KEY_START) != 0 ? button2PressedBmp : button2Bmp, layout.start, 76f * dp, 76f * dp);
+        // rewind/turbo pills
+        drawPill(c, layout.rewind, "<<", keyCount[SPECIAL_REWIND] > 0, alpha);
+        drawPill(c, layout.turbo, ">>", keyCount[SPECIAL_TURBO] > 0, alpha);
         drawPill(c, layout.menu, "\u2261", false, alpha);
         spritePaint.setAlpha(255);
     }

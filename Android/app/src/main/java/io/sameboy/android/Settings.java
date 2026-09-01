@@ -32,6 +32,8 @@ final class Settings {
     private static final String K_RUMBLE = "rumble_mode";  // 0 disabled,1 cartridge,2 all
     private static final String K_CONSOLE = "console_theme";        // 0 SameBoy,1 Dark,2 Follow theme
     private static final String K_SWIPE_DPAD = "swipe_dpad";        // bool
+    private static final String K_ONSCREEN = "onscreen_controls";  // 0 auto,1 always,2 never
+    private static final String K_FILTER = "filter";               // 0 off,1 LCD
 
     // default custom = greyscale shades (darkest..lightest)
     private static final int[] CUSTOM_DEFAULT = { 0x000000, 0x555555, 0xAAAAAA, 0xFFFFFF };
@@ -78,11 +80,12 @@ final class Settings {
     int themeMode()             { return p.getInt(K_THEME, 0); }
     void setThemeMode(int v)    { p.edit().putInt(K_THEME, v).apply(); }
 
-    /** Model to boot the next launch — validated against the three supported models
+    /** Model to boot the next launch — validated against the supported models
      *  (a corrupt/tampered prefs value would otherwise reach GB_init unclamped). */
     int modelForLaunch() {
         int m = model();
-        return (m == NativeBridge.MODEL_DMG_B || m == NativeBridge.MODEL_AGB) ? m : NativeBridge.MODEL_CGB_E;
+        return (m == NativeBridge.MODEL_DMG_B || m == NativeBridge.MODEL_SGB
+                || m == NativeBridge.MODEL_AGB) ? m : NativeBridge.MODEL_CGB_E;
     }
     /** On-screen control alpha 0..1. */
     float buttonOpacity() { return buttonOpacityPct() / 100f; }
@@ -92,6 +95,10 @@ final class Settings {
     void setConsoleTheme(int v) { p.edit().putInt(K_CONSOLE, v).apply(); }
     boolean swipeDpad()         { return p.getBoolean(K_SWIPE_DPAD, false); }
     void setSwipeDpad(boolean v){ p.edit().putBoolean(K_SWIPE_DPAD, v).apply(); }
+    int onscreenControls()          { return p.getInt(K_ONSCREEN, 0); }
+    void setOnscreenControls(int v) { p.edit().putInt(K_ONSCREEN, v).apply(); }
+    int filter()                    { return p.getInt(K_FILTER, 0); }
+    void setFilter(int v)           { p.edit().putInt(K_FILTER, v).apply(); }
 
     /** Resolved console skin: true = dark body/buttons. Mode 2 follows the app theme.
      *  EmulatorActivity is a plain Activity (no AppCompat night resources), so honor the

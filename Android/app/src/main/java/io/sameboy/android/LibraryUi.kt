@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,6 +27,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +86,11 @@ object LibraryUi {
 @Composable
 private fun LibraryScreen(model: LibraryUi.Model, cb: LibraryUi.Callbacks) {
     var context by remember { mutableStateOf<LibraryEntry?>(null) }
+    val firstFocus = remember { FocusRequester() }
+    // Give a controller user an immediate on-screen selection once the grid has content.
+    LaunchedEffect(model.games.isNotEmpty()) {
+        if (model.games.isNotEmpty()) runCatching { firstFocus.requestFocus() }
+    }
     Column(Modifier.fillMaxSize()) {
         CupertinoNavBar(title = "Library", trailing = {
             CupertinoButton(stringResource(R.string.settings), style = ButtonStyle.Plain) { cb.onSettings() }
@@ -99,8 +117,13 @@ private fun LibraryScreen(model: LibraryUi.Model, cb: LibraryUi.Callbacks) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(model.games, key = { it.crc32 }) { e ->
-                    GameTile(e, onClick = { cb.onPlay(e) }, onLongClick = { context = e })
+                itemsIndexed(model.games, key = { _, it -> it.crc32 }) { index, e ->
+                    GameTile(
+                        e,
+                        focusRequester = if (index == 0) firstFocus else null,
+                        onClick = { cb.onPlay(e) },
+                        onLongClick = { context = e },
+                    )
                 }
             }
         }
@@ -122,11 +145,33 @@ private fun LibraryScreen(model: LibraryUi.Model, cb: LibraryUi.Callbacks) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GameTile(e: LibraryEntry, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun GameTile(
+    e: LibraryEntry,
+    focusRequester: FocusRequester?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "tileScale")
+    val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            // Menu / Y button opens the context menu (long-press equivalent) for a controller.
+            .onKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyDown && (ev.key == Key.Menu || ev.key == Key.ButtonY)) {
+                    onLongClick(); true
+                } else false
+            }
+            .clip(shape)
             .background(Cupertino.colors.secondarySystemGroupedBackground)
+            .border(
+                width = if (focused) 3.dp else 0.dp,
+                color = if (focused) Cupertino.colors.systemBlue else Color.Transparent,
+                shape = shape,
+            )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(12.dp),
     ) {

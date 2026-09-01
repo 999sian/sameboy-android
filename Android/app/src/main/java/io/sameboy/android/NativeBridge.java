@@ -30,6 +30,8 @@ public final class NativeBridge {
             int rumbleMode);
     public static native void nativeSetVolume(long ctx, int volume256);
     public static native void nativeSetPalette(long ctx, int builtinIndex, int c0, int c1, int c2, int c3);
+    /** Screen filter: 0 = off (nearest blit), 1 = LCD dot-matrix. */
+    public static native void nativeSetFilter(long ctx, int mode);
     public static native void nativeConnectPrinter(long ctx);
     public static native void nativeDisconnectPrinter(long ctx);
     public static native int nativePrinterGeneration(long ctx);
@@ -48,5 +50,5 @@ public final class NativeBridge {
     public static final int KEY_RIGHT = 0, KEY_LEFT = 1, KEY_UP = 2, KEY_DOWN = 3,
                             KEY_A = 4, KEY_B = 5, KEY_SELECT = 6, KEY_START = 7;
     // GB_model_t (Core/model.h)
-    public static final int MODEL_DMG_B = 0x002, MODEL_CGB_E = 0x205, MODEL_AGB = 0x207;
+    public static final int MODEL_DMG_B = 0x002, MODEL_SGB = 0x004, MODEL_CGB_E = 0x205, MODEL_AGB = 0x207;
 }

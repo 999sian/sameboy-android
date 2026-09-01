@@ -122,6 +122,7 @@ object GameMenuDialog {
                 title = "Model (reboots the game)",
                 actions = listOf(
                     SheetAction("Game Boy (DMG)") { h.onSwitchModel(NativeBridge.MODEL_DMG_B); dismiss() },
+                    SheetAction("Super Game Boy (SGB)") { h.onSwitchModel(NativeBridge.MODEL_SGB); dismiss() },
                     SheetAction("Game Boy Color (CGB)") { h.onSwitchModel(NativeBridge.MODEL_CGB_E); dismiss() },
                     SheetAction("Game Boy Advance (AGB)") { h.onSwitchModel(NativeBridge.MODEL_AGB); dismiss() },
                 ),

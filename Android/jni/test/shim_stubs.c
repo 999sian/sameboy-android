@@ -4,8 +4,8 @@
 
 void ANativeWindow_release(ANativeWindow *win) { (void)win; }
 
-sb_renderer *sb_render_start(ANativeWindow *win, sb_emulator *emu)
-{ (void)win; (void)emu; return (sb_renderer *)0; }
+sb_renderer *sb_render_start(ANativeWindow *win, sb_emulator *emu, const atomic_int *filter)
+{ (void)win; (void)emu; (void)filter; return (sb_renderer *)0; }
 void sb_render_stop(sb_renderer *r) { (void)r; }
 
 sb_audio *sb_audio_start(sb_ring *ring, atomic_bool *dead) { (void)ring; (void)dead; return (sb_audio *)0; }
