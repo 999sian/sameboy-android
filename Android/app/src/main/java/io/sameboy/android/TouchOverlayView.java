@@ -119,8 +119,19 @@ class TouchOverlayView extends View {
     void setOpacity(float a) { opacity = a; invalidate(); }
     void setHaptics(boolean on) { haptics = on; }
 
-    @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
-        layout = new GBLayout(w, h, dp, false);
+    /** Core output size; 256x224 once an SGB border shows. EmulatorActivity owns the value. */
+    private int srcW = 160, srcH = 144;
+
+    void setSourceSize(int w, int h) {
+        if (w == srcW && h == srcH) return;
+        srcW = w; srcH = h;
+        if (getWidth() > 0 && getHeight() > 0) relayout();
+    }
+
+    @Override protected void onSizeChanged(int w, int h, int ow, int oh) { relayout(); }
+
+    private void relayout() {
+        layout = new GBLayout(getWidth(), getHeight(), dp, false, srcW, srcH);
         invalidate();
     }
 

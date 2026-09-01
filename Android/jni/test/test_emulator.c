@@ -231,6 +231,53 @@ static void test_apply_settings(void)
     free(rom);
 }
 
+/* sb_emu_screen_size must track the live border mode, and the whole 256x224
+   output must be produced (no stale/unwritten pixels outside the 160x144 area). */
+static void test_screen_size(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
+    sb_emulator *e = sb_emu_create(0x002, rom, rlen, NULL, 0);   /* DMG_B: never HLE-SGB */
+    assert(e);
+    sb_emu_reset(e);
+    assert(sb_emu_screen_size(NULL) == 0);
+    assert(sb_emu_screen_size(e) == ((160u << 16) | 144u));      /* pre-frame default */
+
+    sb_settings s = { .rewind_seconds = 120, .turbo_cap = 1.0 };
+    s.border_mode = 0;                                           /* GB_BORDER_SGB on a DMG */
+    sb_emu_apply_settings(e, &s);
+    run_frames(e, 2);
+    assert(sb_emu_screen_size(e) == ((160u << 16) | 144u));      /* SGB mode is a no-op off SGB */
+
+    s.border_mode = 2;                                           /* GB_BORDER_ALWAYS */
+    sb_emu_apply_settings(e, &s);
+    run_frames(e, 2);                                            /* live: no reset needed */
+    assert(sb_emu_screen_size(e) == ((256u << 16) | 224u));
+
+    static uint32_t staging[SB_FB_MAX];
+    memset(staging, 0, sizeof(staging));
+    unsigned w = 0, h = 0;
+    sb_emu_copy_front(e, staging, &w, &h);
+    assert(w == 256 && h == 224);
+    for (unsigned i = 0; i < w * h; i++) assert((staging[i] & 0xFF000000u) == 0xFF000000u);
+
+    /* a save state carries no screen geometry: size survives a roundtrip unchanged */
+    uint8_t *st = NULL;
+    size_t n = sb_emu_save_state(e, &st);
+    assert(n && st);
+    assert(sb_emu_load_state(e, st, n) == 0);
+    free(st);
+    run_frames(e, 2);
+    assert(sb_emu_screen_size(e) == ((256u << 16) | 224u));
+
+    s.border_mode = 1;                                           /* GB_BORDER_NEVER */
+    sb_emu_apply_settings(e, &s);
+    run_frames(e, 2);
+    assert(sb_emu_screen_size(e) == ((160u << 16) | 144u));
+
+    sb_emu_destroy(e);
+    free(rom);
+}
+
 static void test_volume_scale(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -397,6 +444,7 @@ int main(void)
     test_audio_drop_nonblocking();
     test_rom_info();
     test_apply_settings();
+    test_screen_size();
     test_volume_scale();
     test_palette();
     test_rumble();

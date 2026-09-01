@@ -22,6 +22,10 @@ const uint32_t *sb_emu_front_buffer(sb_emulator *e, unsigned *w, unsigned *h);
    under the frame lock, so the render thread never reads a buffer the emu
    thread is mid-overwriting. Writes the frame dimensions to *w,*h. */
 void         sb_emu_copy_front(sb_emulator *e, uint32_t *dst, unsigned *w, unsigned *h);
+/* Current output size, packed (w << 16) | h: 160x144 normally, 256x224 while a
+   border is displayed. Reads the cached front-buffer dimensions under fb_mtx —
+   no frame copy, safe from any thread whether running or paused. 0 if e is NULL. */
+uint32_t     sb_emu_screen_size(sb_emulator *e);
 /* Present-on-produce pacing (render thread): block until a new frame is produced past
    *last_seen or timeout_ms elapses. Returns 1 if a new frame arrived, 0 on timeout.
    sb_emu_wake() unblocks a waiter so it can observe a stop flag. */

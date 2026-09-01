@@ -49,3 +49,5 @@ void sb_session_link_connect(sb_session *s, const char *host, int port);
 void sb_session_link_disconnect(sb_session *s);
 int  sb_session_link_status(sb_session *s);
 void   sb_session_copy_frame(sb_session *s, uint32_t *dst, unsigned *w, unsigned *h);
+/* (w << 16) | h of the current output; 0 if s is NULL. Any thread, running or paused. */
+uint32_t sb_session_screen_size(sb_session *s);

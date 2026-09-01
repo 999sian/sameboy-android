@@ -339,6 +339,15 @@ void sb_emu_copy_front(sb_emulator *e, uint32_t *dst, unsigned *w, unsigned *h)
     if (h) *h = fh;
 }
 
+uint32_t sb_emu_screen_size(sb_emulator *e)
+{
+    if (!e) return 0;
+    pthread_mutex_lock(&e->fb_mtx);
+    uint32_t packed = (e->front_w << 16) | e->front_h;
+    pthread_mutex_unlock(&e->fb_mtx);
+    return packed;
+}
+
 /* Present-on-produce: block until frame_seq advances past *last_seen (a new frame was
    produced), or timeout_ms elapses (bounds shutdown latency / avoids a permanent stall if
    the emu is paused). Updates *last_seen. Returns 1 if a new frame arrived, 0 on timeout. */

@@ -49,6 +49,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Runnable batteryPoll = new Runnable() {
         @Override public void run() {
+            applyScreenGeometry();   // catches a border appearing/disappearing mid-game (cheap: one int JNI call)
             if (ctx != 0 && !menuOpen && NativeBridge.nativeIsBatteryDirty(ctx)) {
                 NativeBridge.nativePause(ctx, true);   // save+clear as one parked unit
                 SaveStore.write(savFile, NativeBridge.nativeSaveBattery(ctx));
@@ -209,6 +210,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             NativeBridge.nativeStart(ctx, s);
             NativeBridge.nativeSetFilter(ctx, settings.filter());
             if (menuOpen) NativeBridge.nativePause(ctx, true);
+            recheckGeometrySoon();   // first frame settles the border size
         }
     }
     @Override public void onSurfaceGone() { if (ctx != 0) NativeBridge.nativeStop(ctx); }
@@ -300,7 +302,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         if (im != null) im.registerInputDeviceListener(padListener, handler);
         handler.postDelayed(rumblePoll, 50);
         handler.postDelayed(cameraPoll, 500);
-        refreshControlsVisibility();
+        refreshControlsVisibility();   // also re-applies geometry
+        recheckGeometrySoon();         // Border/model may have changed in Settings
     }
 
     private void ensureCameraPermissionAndStart() {
@@ -512,14 +515,38 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         applyScreenGeometry();
     }
 
+    /** Core output size: 160x144, or 256x224 while an SGB border is displayed. Only changes
+     *  when a border appears/disappears (SGB boot, model switch, Border setting). */
+    private int srcW = 160, srcH = 144;
+
+    /** Pull the current Core output size; true when it changed. 0 (no session / no frame yet)
+     *  keeps the last known size — the battery poll re-checks every 2s. */
+    private boolean refreshSourceSize() {
+        if (ctx == 0) return false;
+        int packed = NativeBridge.nativeScreenSize(ctx);
+        if (packed == 0) return false;
+        int w = packed >>> 16, h = packed & 0xFFFF;
+        if (w == srcW && h == srcH) return false;
+        srcW = w; srcH = h;
+        if (overlay != null) overlay.setSourceSize(w, h);   // console body follows the wider well
+        return true;
+    }
+
+    /** The border only shows up once the Core has produced a frame in the new configuration, so
+     *  a start/reset/model/border change can't be measured synchronously. One delayed re-check
+     *  covers the common case; the 2s battery poll is the backstop. No new thread, no busy poll. */
+    private void recheckGeometrySoon() { handler.postDelayed(this::applyScreenGeometry, 400); }
+
     /** Size/place the emulator surface for the current mode: the console well when the touch
-     *  controls are up, the largest aspect-correct fit of the display when they're hidden. */
+     *  controls are up, the largest aspect-correct fit of the display when they're hidden.
+     *  Sized to the Core's ACTUAL output aspect so the renderer never letterboxes twice. */
     private void applyScreenGeometry() {
         if (root == null || surface == null) return;
         int w = root.getWidth(), h = root.getHeight();
         if (w <= 0 || h <= 0) return;   // pre-layout; the layout listener calls back
-        android.graphics.RectF r = new GBLayout(
-                w, h, getResources().getDisplayMetrics().density, controlsHidden).screenRect;
+        refreshSourceSize();
+        android.graphics.RectF r = new GBLayout(w, h, getResources().getDisplayMetrics().density,
+                controlsHidden, srcW, srcH).screenRect;
         int nw = Math.round(r.width()), nh = Math.round(r.height());
         int nl = Math.round(r.left), nt = Math.round(r.top);
         if (nw == surfaceLp.width && nh == surfaceLp.height
@@ -547,11 +574,19 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             @Override public void onMenuClosed() {
                 menuOpen = false;
                 if (ctx != 0) NativeBridge.nativePause(ctx, false);
+                // Reset / model switch / border toggle all land here, and the Core only
+                // reports its new output size once it has run a frame again.
+                recheckGeometrySoon();
             }
             @Override public void onSaveSlot(int slot) { saveStateToSlot(slot); }
             @Override public void onLoadSlot(int slot) { loadStateFromSlot(slot); }
             @Override public void onResetGame() { if (ctx != 0) NativeBridge.nativeReset(ctx); }
             @Override public void onSwitchModel(int model) { if (ctx != 0) NativeBridge.nativeSwitchModel(ctx, model); }
+            @Override public void onSetBorderMode(int mode) {
+                settings.setBorderMode(mode);
+                if (ctx != 0) settings.apply(ctx);   // live: GB_set_border_mode applies between frames
+            }
+            @Override public int borderMode() { return settings.borderMode(); }
             @Override public void onExitGame() { finish(); }
             @Override public void onOpenSettings() {
                 menuOpen = false;   // menu is closing; SettingsActivity takes over, onResume re-applies
@@ -612,7 +647,9 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         byte[] state = SaveStore.read(SaveStore.stateFile(this, romName, slot));
         if (state == null || !NativeBridge.nativeLoadState(ctx, state)) {
             Toast.makeText(this, "Load failed", Toast.LENGTH_SHORT).show();
+            return;
         }
+        recheckGeometrySoon();   // a state can restore a different model/border → different size
     }
 
     @Override protected void onDestroy() {

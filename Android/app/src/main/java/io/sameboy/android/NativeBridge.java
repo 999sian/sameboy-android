@@ -23,6 +23,10 @@ public final class NativeBridge {
     public static native void    nativeClearBatteryDirty(long ctx);
     /** [0]=width, [1]=height, then width*height ABGR pixels. null on failure. */
     public static native int[]   nativeCopyFrame(long ctx);
+    /** Current Core output size packed as (width << 16) | height — 160x144, or 256x224 while
+     *  an SGB border is displayed. 0 when ctx is invalid or no frame has been produced yet.
+     *  Cheap (reads the cached front-buffer size); safe on the main thread while paused. */
+    public static native int nativeScreenSize(long ctx);
     /** Returns { title, crc32Hex8Upper } for a ROM buffer, or null if not a valid ROM. */
     public static native String[] nativeRomInfo(byte[] rom);
     public static native void nativeApplySettings(long ctx, int colorCorrection, double lightTemp,

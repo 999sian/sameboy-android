@@ -382,6 +382,11 @@ void sb_session_copy_frame(sb_session *s, uint32_t *dst, unsigned *w, unsigned *
     sb_emu_copy_front(s->emu, dst, w, h);   /* fb_mtx-protected copy */
 }
 
+uint32_t sb_session_screen_size(sb_session *s)
+{
+    return s ? sb_emu_screen_size(s->emu) : 0;
+}
+
 void sb_session_start(sb_session *s, ANativeWindow *win)
 {
     if (!s || atomic_load(&s->running)) {

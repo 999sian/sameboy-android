@@ -180,6 +180,10 @@ Java_io_sameboy_android_NativeBridge_nativeCopyFrame(JNIEnv *env, jclass c, jlon
     return arr;
 }
 
+JNIEXPORT jint JNICALL
+Java_io_sameboy_android_NativeBridge_nativeScreenSize(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; return (jint)sb_session_screen_size((sb_session *)(uintptr_t)ctx); }
+
 JNIEXPORT jobjectArray JNICALL
 Java_io_sameboy_android_NativeBridge_nativeRomInfo(JNIEnv *env, jclass c, jbyteArray rom)
 {

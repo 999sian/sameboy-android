@@ -16,23 +16,27 @@ final class GBLayout {
     boolean drawLogo = false;
     float logoY, logoSize;
 
-    GBLayout(int w, int h, float dp, boolean fullscreen) {
+    /** srcW/srcH: the Core's current output size — 160x144, or 256x224 while an SGB
+     *  border is displayed. All screen math is in units of it, so a border widens the
+     *  well instead of being letterboxed inside a 160:144 one. */
+    GBLayout(int w, int h, float dp, boolean fullscreen, int srcW, int srcH) {
+        final float unitW = srcW, unitH = srcH;
         landscape = w > h;
         if (fullscreen) {
             // Controls hidden: the whole display goes to the screen — largest centered
             // aspect-correct fit, no console body. Control points stay unused (0,0).
-            float s = Math.min(w / 160f, h / 144f);
-            float sw = 160f * s, sh = 144f * s;
+            float s = Math.min(w / unitW, h / unitH);
+            float sw = unitW * s, sh = unitH * s;
             screenRect.set((w - sw) / 2f, (h - sh) / 2f, (w + sw) / 2f, (h + sh) / 2f);
             bezelWidth = 0f;
             return;
         }
         if (landscape) {
             // height-filling integer-scaled screen, >=164dp wings for controls
-            float sh = (float) Math.floor(h / 144f) * 144f;
+            float sh = (float) Math.floor(h / unitH) * unitH;
             if (sh == 0) sh = h;
-            float sw = sh / 144f * 160f;
-            while ((w - sw) / 2f < 164f * dp && sh > 144f) { sh -= 144f; sw -= 160f; }
+            float sw = sh / unitH * unitW;
+            while ((w - sw) / 2f < 164f * dp && sh > unitH) { sh -= unitH; sw -= unitW; }
             float border = Math.min(sw / 40f, 16f * dp);
             float x = (w - sw) / 2f;
             float vMargin = (h - sh) / 2f;
@@ -59,11 +63,11 @@ final class GBLayout {
             // short screens (menu pill moves top-right, rewind/turbo under
             // select/start, tighter gaps) — keeps the largest possible screen.
             // Only if even compact overflows does the screen shrink a step.
-            float sw = (float) Math.floor(w / 160f) * 160f;
+            float sw = (float) Math.floor(w / unitW) * unitW;
             if (sw == 0) sw = w;
             float sh, border, topInset, y, controlAreaStart, selectY, dpadY;
             while (true) {
-                sh = sw / 160f * 144f;
+                sh = sw / unitW * unitH;
                 border = Math.min(sw / 40f, 16f * dp);
                 topInset = Math.min(border * 2f, 20f * dp);
                 y = topInset + 24f * dp;               // status-bar breathing room
@@ -72,13 +76,13 @@ final class GBLayout {
                 // pass 1: roomy (iOS formulas)
                 selectY = Math.min(h - 80f * dp, (h - controlAreaStart) * 0.75f + controlAreaStart);
                 dpadY = selectY - 140f * dp;
-                if (dpadY - 84f * dp >= wellClear || sw <= 160f) { compact = false; break; }
+                if (dpadY - 84f * dp >= wellClear || sw <= unitW) { compact = false; break; }
                 // pass 2: compact — pack the stack right under the well
                 dpadY = wellClear + 84f * dp;          // d-pad half (76dp) + 8dp gap
                 selectY = dpadY + 122f * dp;
                 float rewindY = selectY + 56f * dp;
-                if (rewindY <= h - 20f * dp || sw <= 160f) { compact = true; break; }
-                sw -= 160f;
+                if (rewindY <= h - 20f * dp || sw <= unitW) { compact = true; break; }
+                sw -= unitW;
             }
             float x = (w - sw) / 2f;
             screenRect.set(x, y, x + sw, y + sh);

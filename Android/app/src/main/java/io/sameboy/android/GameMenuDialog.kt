@@ -55,6 +55,8 @@ object GameMenuDialog {
         fun onLoadSlot(slot: Int)
         fun onResetGame()
         fun onSwitchModel(model: Int)
+        fun onSetBorderMode(mode: Int)       // 0 SGB games only, 1 Never, 2 Always
+        fun borderMode(): Int
         fun onOpenSettings()
         fun onConnectAccessory(which: Int)   // 0 = None, 1 = Printer
         fun onPrinterFeed()
@@ -65,7 +67,7 @@ object GameMenuDialog {
         fun thumbnail(slot: Int): Bitmap?
     }
 
-    private enum class Screen { Menu, SaveSlots, LoadSlots, Models, Accessory }
+    private enum class Screen { Menu, SaveSlots, LoadSlots, Models, Border, Accessory }
 
     @JvmStatic
     fun show(a: Activity, h: Host) {
@@ -109,6 +111,7 @@ object GameMenuDialog {
                     SheetAction("Load state", dismisses = false) { screen = Screen.LoadSlots },
                     SheetAction("Reset") { h.onResetGame(); dismiss() },
                     SheetAction("Model", dismisses = false) { screen = Screen.Models },
+                    SheetAction("Border", dismisses = false) { screen = Screen.Border },
                     SheetAction("Connect accessory", dismisses = false) { screen = Screen.Accessory },
                     SheetAction("Printer feed") { h.onPrinterFeed(); takeOver() },
                     SheetAction("Link cable") { h.onLinkCable(); takeOver() },
@@ -129,6 +132,19 @@ object GameMenuDialog {
                 cancelLabel = "Cancel",
                 onDismiss = dismiss,
             )
+            Screen.Border -> {
+                val mode = h.borderMode()
+                ActionSheetContent(
+                    title = "Border",
+                    actions = listOf("SGB games only", "Never", "Always").mapIndexed { i, label ->
+                        SheetAction((if (i == mode) "\u2713 " else "") + label) {
+                            h.onSetBorderMode(i); dismiss()
+                        }
+                    },
+                    cancelLabel = "Cancel",
+                    onDismiss = dismiss,
+                )
+            }
             Screen.Accessory -> {
                 val connected = h.printerConnected()
                 ActionSheetContent(

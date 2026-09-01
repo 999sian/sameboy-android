@@ -115,7 +115,14 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
             },
         ))
 
-        CupertinoSection(header = "Video", rows = listOf(
+        CupertinoSection(
+            header = "Video",
+            // ponytail: section footer is the existing Cupertino footnote affordance; no new component.
+            footer = if (MODELS[model] != NativeBridge.MODEL_SGB) {
+                "\u201CSGB-aware games only\u201D requires the Super Game Boy (SGB) model " +
+                    "\u2014 set Model above."
+            } else null,
+            rows = listOf(
             {
                 PickerRow(
                     "Color correction",
@@ -126,9 +133,11 @@ private fun SettingsScreen(s: Settings, onBack: () -> Unit, onGamepad: () -> Uni
             },
             { SliderRow("Light temperature", light, 0, 20, "") { light = it; s.setLightSlider(it) } },
             {
-                PickerRow("Border", listOf("SGB", "Never", "Always"), border) {
-                    border = it; s.setBorderMode(it)
-                }
+                PickerRow(
+                    "Border",
+                    listOf("SGB-aware games only", "Never", "Always"),
+                    border,
+                ) { border = it; s.setBorderMode(it) }
             },
             {
                 val names = listOf("Greyscale", "DMG", "MGB", "GBL", "Custom\u2026")

@@ -90,6 +90,9 @@ int main(void)
     unsigned w = 0, h = 0;
     sb_session_copy_frame(s, fb, &w, &h);
     assert(w >= 160 && h >= 144);
+    /* the JNI's geometry query must agree with the frame it describes */
+    assert(sb_session_screen_size(s) == ((w << 16) | h));
+    assert(sb_session_screen_size(NULL) == 0);
 
     /* pause/unpause storm interleaved with control flags */
     for (int i = 0; i < 20; i++) {
