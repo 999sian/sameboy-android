@@ -6,6 +6,7 @@ import android.graphics.Color as AColor
 import android.graphics.drawable.ColorDrawable
 import android.text.format.DateUtils
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.Image
@@ -78,7 +79,12 @@ object GameMenuDialog {
     @JvmStatic
     fun show(a: Activity, h: Host) {
         val chained = booleanArrayOf(false)   // an Activity took over; don't unpause yet
-        val dialog = ComponentDialog(a)
+        val hat = BooleanArray(4)
+        val dialog = object : ComponentDialog(a) {
+            // Hat-switch d-pads never produce DPAD keys; synthesize them so focus traversal works.
+            override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean =
+                GamepadMapper.hatToDpadKeys(ev, hat) { dispatchKeyEvent(it) } || super.dispatchGenericMotionEvent(ev)
+        }
         dialog.setContentView(ComposeView(a).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,

@@ -95,4 +95,24 @@ final class GamepadMapper {
         float y = Math.abs(hy) > Math.abs(sy) ? hy : sy;
         return new boolean[]{ x > 0.5f, x < -0.5f, y < -0.5f, y > 0.5f };  // right,left,up,down
     }
+
+    /** Hat/stick d-pad → synthetic KEYCODE_DPAD_* key events for UI navigation (menus, library,
+     *  settings). Many pads (and Retroid firmware in "Xbox" mode) report the d-pad only as
+     *  AXIS_HAT_X/Y, which View/Compose focus traversal never sees. `state` is the caller's
+     *  4-entry {right,left,up,down} latch. Returns true when the event was a joystick move. */
+    static boolean hatToDpadKeys(MotionEvent e, boolean[] state, java.util.function.Consumer<KeyEvent> sink) {
+        if ((e.getSource() & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK
+                || e.getAction() != MotionEvent.ACTION_MOVE) return false;
+        final int[] codes = { KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT,
+                              KeyEvent.KEYCODE_DPAD_UP,    KeyEvent.KEYCODE_DPAD_DOWN };
+        boolean[] now = axisDpad(e);
+        for (int i = 0; i < 4; i++) {
+            if (now[i] == state[i]) continue;
+            state[i] = now[i];
+            sink.accept(new KeyEvent(e.getDownTime(), e.getEventTime(),
+                now[i] ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP, codes[i], 0, e.getMetaState(),
+                e.getDeviceId(), 0, 0, InputDevice.SOURCE_DPAD));
+        }
+        return true;
+    }
 }

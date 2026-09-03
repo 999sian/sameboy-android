@@ -10,7 +10,6 @@ import android.os.Bundle;
 import android.provider.MediaStore;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 
 import java.io.File;
@@ -19,7 +18,7 @@ import java.io.OutputStream;
 
 /** Shows the accumulated Game Boy Printer feed; save to Pictures / share PNG / clear.
  *  Reads pixels via NativeBridge.nativePrinterFeed on the singleton session ctx. */
-public final class PrinterFeedActivity extends AppCompatActivity {
+public final class PrinterFeedActivity extends DpadActivity {
     public static final String EXTRA_CTX = "io.sameboy.ctx";
     private static final int REQ_WRITE = 71;   // pre-29 save-to-Pictures permission
     private long ctx;

@@ -1,6 +1,5 @@
 package io.sameboy.android;
 
-import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.KeyEvent;
 
@@ -8,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Bind each GB input to a controller button: tap a row to arm, then press a button. */
-public class GamepadRemapActivity extends AppCompatActivity {
+public class GamepadRemapActivity extends DpadActivity {
     private GamepadMapper pad;
     private int capturing = -1;                 // GB key awaiting a keycode, or -1
     private RemapUi.Model model;

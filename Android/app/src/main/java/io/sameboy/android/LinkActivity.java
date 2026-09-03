@@ -5,11 +5,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 
-import androidx.appcompat.app.AppCompatActivity;
 
 /** Link-cable connect screen: Host (listen on 1989) or Join (peer IP), with a live status
  *  line polling NativeBridge.nativeLinkStatus. TCP over the local network. */
-public final class LinkActivity extends AppCompatActivity {
+public final class LinkActivity extends DpadActivity {
     public static final String EXTRA_CTX = "io.sameboy.ctx";
     private static final int PORT = 1989;
     private long ctx;
