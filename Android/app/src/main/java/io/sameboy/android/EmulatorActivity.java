@@ -570,6 +570,11 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private void openMenu() {
         menuOpen = true;
         NativeBridge.nativePause(ctx, true);
+        /* Gameplay consumes every d-pad key before the framework can leave touch mode, so the
+           window is still in touch mode and Compose's clickable rows refuse focus. Leave it
+           here (this window is focused; the dialog's isn't yet) so the sheet's first row can
+           take the controller cursor immediately instead of after a wasted press. */
+        if (GamepadMapper.anyGamepadConnected()) getWindow().getDecorView().requestFocusFromTouch();
         GameMenuDialog.show(this, new GameMenuDialog.Host() {
             @Override public void onMenuClosed() {
                 menuOpen = false;

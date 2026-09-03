@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.sp
@@ -271,13 +275,19 @@ class SheetAction(
 )
 
 @Composable
-private fun SheetButton(label: String, color: Color, weight: FontWeight, onClick: () -> Unit) {
+private fun SheetButton(
+    label: String, color: Color, weight: FontWeight,
+    focusRequester: FocusRequester? = null, onClick: () -> Unit,
+) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    var focused by remember { mutableStateOf(false) }   // controller cursor: same look as a press
     Box(
         Modifier
             .fillMaxWidth().height(57.dp)
-            .background(if (pressed) Cupertino.colors.fill else Color.Transparent)
+            .background(if (pressed || focused) Cupertino.colors.fill else Color.Transparent)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
             .clickable(interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -292,6 +302,9 @@ fun ActionSheetContent(
     cancelLabel: String,
     onDismiss: () -> Unit,
 ) {
+    // Put the controller cursor on the first action as soon as the sheet appears.
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
     Column(
         Modifier.widthIn(max = 420.dp).fillMaxWidth()
             .clickable(remember { MutableInteractionSource() }, indication = null) {}
@@ -313,6 +326,7 @@ fun ActionSheetContent(
                     a.label,
                     if (a.destructive) Cupertino.colors.systemRed else Cupertino.colors.systemBlue,
                     FontWeight.Normal,
+                    focusRequester = if (i == 0) firstFocus else null,
                 ) { a.onClick(); if (a.dismisses) onDismiss() }
                 if (i < actions.lastIndex) {
                     Box(Modifier.fillMaxWidth().height(0.5.dp).background(Cupertino.colors.separator))
@@ -324,7 +338,7 @@ fun ActionSheetContent(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                 .background(Cupertino.colors.secondarySystemGroupedBackground),
         ) {
-            SheetButton(cancelLabel, Cupertino.colors.systemBlue, FontWeight.SemiBold, onDismiss)
+            SheetButton(cancelLabel, Cupertino.colors.systemBlue, FontWeight.SemiBold, onClick = onDismiss)
         }
     }
 }

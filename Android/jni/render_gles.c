@@ -24,22 +24,40 @@ static const char *VS =
 static const char *FS =
     "precision mediump float;varying vec2 vTex;uniform sampler2D uTex;"
     "void main(){gl_FragColor=texture2D(uTex,vTex);}";
-/* DMG dot matrix: darken the first output pixel of every source pixel along each
-   axis, so each GB pixel reads as an LCD cell with a gutter. uSrc = source
-   resolution, uGap = one output pixel expressed in source-pixel units (1/scale),
-   so the grid is exactly 1 px wide at any scale. No smoothing: at integer scale the
-   lines are already pixel-aligned, and a soft gutter of this width falls entirely
-   between sample centers and renders invisible (verified numerically, scales 2..8). */
+/* Straight GLES2 port of Shaders/MonoLCD.fsh (desktop "Monochrome LCD" filter) wrapped in
+   MasterShader.fsh's gamma handling: cell gutters via SCANLINE_DEPTH, a soft bilinear
+   BLOOM, and a (-0.6,-0.8)px drop shadow. All fractional-position math, so it is stable
+   at any scale (the old step-based grid jittered at non-integer fill-screen scales).
+   vTex already runs top-down like MasterShader's flipped `position`. */
 static const char *FS_LCD =
     "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
     "precision highp float;\n"
     "#else\n"
     "precision mediump float;\n"
     "#endif\n"
-    "varying vec2 vTex;uniform sampler2D uTex;uniform vec2 uSrc;uniform float uGap;"
+    "#define SCANLINE_DEPTH 0.25\n"
+    "#define BLOOM 0.4\n"
+    "#define GAMMA 2.2\n"
+    "varying vec2 vTex;uniform sampler2D uTex;uniform vec2 uSrc;"
+    "vec4 tex(vec2 p){return pow(texture2D(uTex,p),vec4(GAMMA));}"
+    "vec4 bilin(vec2 pixel,vec2 s){"
+    "vec4 q11=tex((floor(pixel)+0.5)/uSrc);"
+    "vec4 q12=tex((vec2(floor(pixel.x),ceil(pixel.y))+0.5)/uSrc);"
+    "vec4 q21=tex((vec2(ceil(pixel.x),floor(pixel.y))+0.5)/uSrc);"
+    "vec4 q22=tex((ceil(pixel)+0.5)/uSrc);"
+    "return mix(mix(q11,q21,s.x),mix(q12,q22,s.x),s.y);}"
+    "float edge(float p){"
+    "if(p<1.0)return p*SCANLINE_DEPTH+(1.0-SCANLINE_DEPTH);"
+    "if(p>5.0)return (6.0-p)*SCANLINE_DEPTH+(1.0-SCANLINE_DEPTH);"
+    "return 1.0;}"
     "void main(){"
-    "vec2 s=step(vec2(uGap),fract(vTex*uSrc));"
-    "gl_FragColor=vec4(texture2D(uTex,vTex).rgb*(0.75+0.25*min(s.x,s.y)),1.0);}";
+    "vec2 pixel=vTex*uSrc-0.5;"
+    "vec2 sub=fract(vTex*uSrc)*6.0;"
+    "float m=edge(sub.x)*edge(sub.y);"
+    "vec4 pre=mix(tex(vTex)*m,bilin(pixel,smoothstep(0.0,1.0,fract(pixel))),BLOOM);"
+    "pixel+=vec2(-0.6,-0.8);"
+    "vec4 shadow=bilin(pixel,fract(pixel));"
+    "gl_FragColor=vec4(pow(mix(min(shadow,pre),pre,0.75).rgb,vec3(1.0/GAMMA)),1.0);}";
 
 static GLuint compile(GLenum t, const char *src)
 {
@@ -88,7 +106,6 @@ static void *render_thread(void *arg)
     GLuint prog = build(FS);
     GLuint prog_lcd = build(FS_LCD);
     GLint u_src = glGetUniformLocation(prog_lcd, "uSrc");
-    GLint u_gap = glGetUniformLocation(prog_lcd, "uGap");
 
     GLuint tex; glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
@@ -136,12 +153,9 @@ static void *render_thread(void *arg)
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, quad);
 
-        /* Scale 1 has no spare pixel for a gutter (uGap would be 1.0, darkening every
-           pixel uniformly) — fall back to the plain blit. */
-        if ((r->filter ? atomic_load(r->filter) : 0) == 1 && scale >= 2.0f) {
+        if ((r->filter ? atomic_load(r->filter) : 0) == 1) {
             glUseProgram(prog_lcd);
             glUniform2f(u_src, (GLfloat)w, (GLfloat)h);
-            glUniform1f(u_gap, 1.0f / (GLfloat)scale);
         }
         else {
             glUseProgram(prog);

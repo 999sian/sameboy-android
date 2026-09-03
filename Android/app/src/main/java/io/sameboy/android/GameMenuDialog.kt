@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.ViewGroup
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
@@ -55,7 +61,7 @@ object GameMenuDialog {
         fun onLoadSlot(slot: Int)
         fun onResetGame()
         fun onSwitchModel(model: Int)
-        fun onSetBorderMode(mode: Int)       // 0 SGB games only, 1 Never, 2 Always
+        fun onSetBorderMode(mode: Int)       // 0 SGB-aware games only, 1 Never, 2 Always
         fun borderMode(): Int
         fun onOpenSettings()
         fun onConnectAccessory(which: Int)   // 0 = None, 1 = Printer
@@ -136,7 +142,7 @@ object GameMenuDialog {
                 val mode = h.borderMode()
                 ActionSheetContent(
                     title = "Border",
-                    actions = listOf("SGB games only", "Never", "Always").mapIndexed { i, label ->
+                    actions = listOf("SGB-aware games only", "Never", "Always").mapIndexed { i, label ->
                         SheetAction((if (i == mode) "\u2713 " else "") + label) {
                             h.onSetBorderMode(i); dismiss()
                         }
@@ -168,6 +174,10 @@ object GameMenuDialog {
 
     @Composable
     private fun SlotSheet(h: Host, forSave: Boolean, dismiss: () -> Unit) {
+        // Controller cursor lands on the first usable slot (load: first non-empty one).
+        val firstFocus = remember { FocusRequester() }
+        val firstUsable = (0 until SLOTS).firstOrNull { forSave || h.stateFile(it).exists() }
+        LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
         Column(Modifier.fillMaxWidth().padding(8.dp)) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
@@ -182,16 +192,21 @@ object GameMenuDialog {
                 for (r in 0 until SLOTS step 2) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (slot in r until minOf(r + 2, SLOTS)) {
-                            SlotCard(h, slot, forSave, dismiss, Modifier.weight(1f))
+                            SlotCard(
+                                h, slot, forSave, dismiss, Modifier.weight(1f),
+                                if (slot == firstUsable) firstFocus else null,
+                            )
                         }
                     }
                     Spacer(Modifier.height(8.dp))
                 }
             }
             Spacer(Modifier.height(8.dp))
+            var cancelFocused by remember { mutableStateOf(false) }
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                    .background(Cupertino.colors.secondarySystemGroupedBackground)
+                    .background(if (cancelFocused) Cupertino.colors.fill else Cupertino.colors.secondarySystemGroupedBackground)
+                    .onFocusChanged { cancelFocused = it.isFocused }
                     .clickable(remember { MutableInteractionSource() }, indication = null, onClick = dismiss)
                     .height(57.dp),
                 verticalArrangement = Arrangement.Center,
@@ -203,15 +218,23 @@ object GameMenuDialog {
     }
 
     @Composable
-    private fun SlotCard(h: Host, slot: Int, forSave: Boolean, dismiss: () -> Unit, modifier: Modifier) {
+    private fun SlotCard(
+        h: Host, slot: Int, forSave: Boolean, dismiss: () -> Unit, modifier: Modifier,
+        focusRequester: FocusRequester?,
+    ) {
         val file = h.stateFile(slot)
         val exists = file.exists()
         val enabled = forSave || exists
         val bmp = if (exists) h.thumbnail(slot) else null
+        var focused by remember { mutableStateOf(false) }
+        val shape = RoundedCornerShape(10.dp)
         Row(
             modifier
-                .clip(RoundedCornerShape(10.dp))
+                .clip(shape)
                 .background(Cupertino.colors.fill)
+                .border(if (focused) 3.dp else 0.dp, if (focused) Cupertino.colors.systemBlue else Color.Transparent, shape)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                .onFocusChanged { focused = it.isFocused }
                 .let {
                     if (enabled) it.clickable(remember { MutableInteractionSource() }, indication = null) {
                         if (forSave) h.onSaveSlot(slot) else h.onLoadSlot(slot)
