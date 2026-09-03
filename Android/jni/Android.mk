@@ -16,8 +16,13 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := sameboy_core
 LOCAL_SRC_FILES := $(CORE_SOURCES) $(BRIDGE_SOURCES)
 LOCAL_C_INCLUDES := $(CORE_DIR) $(CORE_DIR)/Core
-LOCAL_CFLAGS    := -std=gnu11 -DGB_INTERNAL -DGB_DISABLE_DEBUGGER \
-                   -DGB_VERSION=\"$(VERSION)\" -D_GNU_SOURCE \
+# GB_DISABLE_TIMEKEEPING: the blocking audio ring is the only clock. With the Core's own
+#   gettimeofday pacer also compiled in, whichever clock ran faster won and the other
+#   underran -> periodic click (measured on Pixel 8 Pro). Turbo cap moves to emu_loop.
+# NDEBUG: upstream's release CONF sets it; without it GB_CONTEXT_SAFETY and the Core's
+#   internal assert()s are live and abort the app instead of being no-ops.
+LOCAL_CFLAGS    := -std=gnu11 -DGB_INTERNAL -DGB_DISABLE_DEBUGGER -DGB_DISABLE_TIMEKEEPING \
+                   -DNDEBUG -DGB_VERSION=\"$(VERSION)\" -D_GNU_SOURCE \
                    -Wno-multichar -O2 -fvisibility=hidden
 LOCAL_LDLIBS    := -landroid -lEGL -lGLESv2 -laaudio -llog
 # 16 KB page alignment: Android 15+ / Play require .so LOAD segments 16 KB-aligned.

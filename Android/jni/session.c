@@ -26,6 +26,7 @@ struct sb_session {
     atomic_bool battery_dirty;  /* published by emu loop, read by JNI */
     atomic_int volume;          /* 0..256; read by emu audio path */
     atomic_int filter;          /* 0 off, 1 LCD; read by the render thread */
+    atomic_int turbo_frame_ns;  /* min ns per frame while turbo (cap); 0 = uncapped */
     int parked;                 /* emu thread is waiting in pause_cv (under pause_mtx) */
     pthread_mutex_t pause_mtx;
     pthread_cond_t pause_cv;
@@ -48,6 +49,7 @@ static void *emu_loop(void *arg)
     sb_sched_boost_current_thread(-19 /* THREAD_PRIORITY_URGENT_AUDIO */);
     int applied_turbo = -1; /* -1: force first-iteration apply — core turbo state persists across stop/start */
     int audio_retry_in = 0; /* frames until the next (re)open attempt while running without audio */
+    int64_t turbo_next = 0; /* CLOCK_MONOTONIC deadline for the next capped turbo frame */
     while (atomic_load(&s->running)) {
         pthread_mutex_lock(&s->pause_mtx);
         while (s->paused && atomic_load(&s->running)) {
@@ -107,6 +109,21 @@ static void *emu_loop(void *arg)
         }
 
         sb_emu_run_frame(s->emu);   /* blocks on the audio ring => paced */
+        /* Turbo drops audio, so the ring no longer paces; the Core's own wall-clock sync is
+           compiled out (GB_DISABLE_TIMEKEEPING — two pacers fought and clicked), so the
+           cap is enforced here against CLOCK_MONOTONIC. */
+        int fns = turbo ? atomic_load(&s->turbo_frame_ns) : 0;
+        if (fns) {
+            struct timespec now; clock_gettime(CLOCK_MONOTONIC, &now);
+            int64_t t = (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
+            if (t > turbo_next + fns) turbo_next = t;   /* first frame / after a stall: resync */
+            turbo_next += fns;
+            if (turbo_next > t) {
+                struct timespec ts = { 0, (long)(turbo_next - t) };
+                nanosleep(&ts, NULL);
+            }
+        }
+        else turbo_next = 0;
         atomic_store(&s->battery_dirty, sb_emu_battery_dirty(s->emu) != 0);
         if (sb_emu_link_dead(s->emu)) {
             int exp = SB_LINK_CONNECTED;   /* don't clobber a concurrent disconnect's IDLE */
@@ -139,6 +156,7 @@ sb_session *sb_session_create(int model, const uint8_t *rom, size_t rom_len,
     atomic_init(&s->battery_dirty, false);
     atomic_init(&s->volume, 256);
     atomic_init(&s->filter, 0);
+    atomic_init(&s->turbo_frame_ns, 0);
     sb_emu_set_volume_ptr(emu, &s->volume);
     sb_emu_set_audio_drop(emu, &s->audio_drop);
     pthread_mutex_init(&s->pause_mtx, NULL);
@@ -247,6 +265,8 @@ void sb_session_switch_model(sb_session *s, int model)
 void sb_session_apply_settings(sb_session *s, const sb_settings *cfg)
 {
     if (!s) return;
+    /* 16.742 ms = one frame at 59.7275 Hz; cap N× → at least that/N per turbo frame. */
+    atomic_store(&s->turbo_frame_ns, cfg->turbo_cap > 0 ? (int)(16742706.0 / cfg->turbo_cap) : 0);
     int was = park_begin(s);
     sb_emu_apply_settings(s->emu, cfg);
     park_end(s, was);
