@@ -160,6 +160,7 @@ sb_transport *sb_transport_tcp_connect(const char *host, int port, atomic_bool *
     char portstr[16]; snprintf(portstr, sizeof(portstr), "%d", port);
     struct addrinfo hints = {0}, *res = NULL;
     hints.ai_family = AF_INET; hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICHOST;   /* UI collects an IP; a DNS lookup is uncancellable and disconnect joins this thread */
     if (getaddrinfo(host, portstr, &hints, &res) != 0 || !res) return NULL;
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) { freeaddrinfo(res); return NULL; }
@@ -188,12 +189,14 @@ sb_transport *sb_transport_tcp_connect(const char *host, int port, atomic_bool *
 
 /* ---------- sb_link: byte-level master/slave serial bridge ---------- */
 #define SB_LINK_TIMEOUT_MS 1500   /* per-byte master wait; peer gone → 0xFF, no hang */
+#define SB_LINK_DEAD_AFTER 4      /* consecutive failed exchanges before latching dead (~6 s) */
 
 struct sb_link {
     sb_transport *t;
     uint8_t in_byte;   /* peer byte for the current master transfer */
     int     bits;      /* master bit_end index 0..7; 0 = start of a fresh byte */
-    bool    dead;      /* a send/recv failed → treat as an unplugged cable (instant 0xFF) */
+    int     fails;     /* consecutive master exchange failures */
+    bool    dead;      /* peer gone → treat as an unplugged cable (instant 0xFF) */
 };
 
 sb_link *sb_link_create(sb_transport *t) {
@@ -227,8 +230,12 @@ void sb_link_bit_start(sb_link *s, GB_gameboy_t *gb, bool bit) {
     uint8_t out = GB_safe_read_memory(gb, 0xFF01);   /* SB */
     if (!s->t->send(s->t, out) || !s->t->recv(s->t, &s->in_byte, SB_LINK_TIMEOUT_MS)) {
         s->in_byte = 0xFF;   /* peer gone / timeout: link idle-high */
-        s->dead = true;      /* latch: don't stall 1500 ms on every subsequent byte */
+        /* One timeout is normal — the peer may be parked in its menu, or still in a
+           pre-link screen. Latch only after several in a row (a closed socket fails fast,
+           so a real disconnect still latches within a frame). */
+        if (++s->fails >= SB_LINK_DEAD_AFTER) s->dead = true;
     }
+    else s->fails = 0;
 }
 /* master: return the peer byte MSB-first over 8 calls; wraps bits back to 0 after the 8th. */
 bool sb_link_bit_end(sb_link *s, GB_gameboy_t *gb) {
@@ -238,15 +245,17 @@ bool sb_link_bit_end(sb_link *s, GB_gameboy_t *gb) {
     s->bits = (s->bits + 1) & 7;
     return r;
 }
-/* slave: per-frame on the emu thread. If externally clocked and a master byte is waiting,
-   send our SB back and clock the 8 bits in (MSB-first). */
+/* slave: per-frame on the emu thread. Answer every master byte, armed or not, exactly like
+   the Core's own external-clock path: a disabled serial port yields 0 bits and ignores the
+   clocked-in data (GB_serial_set_data_bit is a no-op then), and an internally-clocked port
+   reads as 1s. Leaving an unarmed master byte unanswered would stall the master for the
+   full timeout every time one side reaches link mode first (Tetris 2P, Cable Club). */
 void sb_link_slave_poll(sb_link *s, GB_gameboy_t *gb) {
     if (!s || s->dead) return;
-    uint8_t sc = GB_safe_read_memory(gb, 0xFF02);
-    if ((sc & 0x81) != 0x80) return;                 /* not armed as slave */
     uint8_t m;
     if (!s->t->recv(s->t, &m, 0)) return;            /* non-blocking; nothing yet */
-    uint8_t out = GB_safe_read_memory(gb, 0xFF01);   /* our outgoing byte, before clocking */
+    uint8_t sc = GB_safe_read_memory(gb, 0xFF02);
+    uint8_t out = !(sc & 0x80) ? 0x00 : (sc & 1) ? 0xFF : GB_safe_read_memory(gb, 0xFF01);
     if (!s->t->send(s->t, out)) { s->dead = true; return; }
     for (int i = 0; i < 8; i++) GB_serial_set_data_bit(gb, (m >> (7 - i)) & 1);
 }

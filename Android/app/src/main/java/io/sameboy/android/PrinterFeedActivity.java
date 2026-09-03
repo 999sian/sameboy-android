@@ -95,6 +95,8 @@ public final class PrinterFeedActivity extends DpadActivity {
                 FileOutputStream os = new FileOutputStream(f);
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, os);
                 os.close();
+                // Pre-29 there is no MediaStore insert: without a scan, Gallery/Photos never show it.
+                android.media.MediaScannerConnection.scanFile(this, new String[]{ f.getPath() }, new String[]{ "image/png" }, null);
                 Toast.makeText(this, R.string.saved_to_pictures, Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {

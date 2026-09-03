@@ -81,9 +81,11 @@ object Cupertino {
     val type: CupertinoType get() = CupertinoTypeInstance
 }
 
+/** `dark` defaults to the host Context's uiMode. Plain (non-AppCompat) activities don't get
+ *  the in-app theme override applied to their configuration, so they pass it explicitly. */
 @Composable
-fun CupertinoTheme(fillBackground: Boolean = true, content: @Composable () -> Unit) {
-    val colors = if (isSystemInDarkTheme()) Dark else Light
+fun CupertinoTheme(fillBackground: Boolean = true, dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    val colors = if (dark) Dark else Light
     CompositionLocalProvider(LocalCupertinoColors provides colors) {
         if (fillBackground) {
             Box(Modifier.fillMaxSize().background(colors.systemGroupedBackground)) {

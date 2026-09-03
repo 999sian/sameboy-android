@@ -14,16 +14,19 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends DpadActivity {
     private static final int REQ_TREE = 1, REQ_FILE = 2;
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
-    private final Handler ui = new Handler(Looper.getMainLooper());
-    private Library library;
+    // Process-scoped: a folder scan outlives the Activity (theme toggle / recreation), and its
+    // adds must land in the Library the next instance shows and saves — not a dead one whose
+    // save() a stale instance then overwrites.
+    private static final ExecutorService io = Executors.newSingleThreadExecutor();
+    private static final Handler ui = new Handler(Looper.getMainLooper());
+    private static Library library;
+    private static boolean scanning = false;   // tree scan in flight: adds are in memory, not yet saved
+    private static MainActivity current;       // resumed instance, for refresh() from a finished scan
     private LibraryUi.Model model;
-    private boolean scanning = false;   // tree scan in flight: adds are in memory, not yet saved
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
-        library = new Library(this);
-        library.load();
+        if (library == null) { library = new Library(this); library.load(); }
         model = LibraryUi.bind(this, new LibraryUi.Callbacks() {
             @Override public void onImportFolder() { pickTree(); }
             @Override public void onOpenRom() { pickFile(); }
@@ -42,14 +45,15 @@ public class MainActivity extends DpadActivity {
 
     @Override protected void onResume() {
         super.onResume();
+        current = this;
         // Reloading mid-scan would wipe the scan's unsaved in-memory adds (entries.clear()).
         if (!scanning) library.load();   // pick up a background scan's save / another instance's changes
         refresh();
     }
 
-    @Override protected void onDestroy() {
-        super.onDestroy();
-        io.shutdown();   // idle single-thread executors are never GC'd; leaks a thread per recreation
+    @Override protected void onPause() {
+        super.onPause();
+        if (current == this) current = null;
     }
 
     private void refresh() { model.setGames(library.listSorted()); }
@@ -79,13 +83,13 @@ public class MainActivity extends DpadActivity {
             scanning = true;
             io.execute(() -> {
                 int[] added = {0};
-                RomScanner.scanTree(this, uri, entry ->
+                RomScanner.scanTree(getApplicationContext(), uri, entry ->
                     ui.post(() -> { if (library.add(entry)) added[0]++; }));
                 ui.post(() -> {
                     scanning = false;
                     library.save();
-                    refresh();
-                    Toast.makeText(this, getString(R.string.added_n, added[0]), Toast.LENGTH_SHORT).show();
+                    if (current != null) current.refresh();
+                    Toast.makeText(getApplicationContext(), getString(R.string.added_n, added[0]), Toast.LENGTH_SHORT).show();
                 });
             });
         } else { // REQ_FILE

@@ -87,6 +87,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private long lastCameraWant = 0;
     private boolean cameraDenied = false;   // latch a CAMERA denial so we don't re-prompt every poll
     private final byte[] cameraGray = new byte[128 * 112];
+    private volatile int cameraSensorOri = 0;      // CameraCharacteristics.SENSOR_ORIENTATION
+    private volatile boolean cameraFront = false;  // front lens: mirror so the viewfinder reads like a mirror
     private final Runnable cameraPoll = new Runnable() {
         @Override public void run() {
             if (ctx != 0 && NativeBridge.nativeCameraWanted(ctx)) {
@@ -306,14 +308,30 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         recheckGeometrySoon();         // Border/model may have changed in Settings
     }
 
+    /** Everything in the manifest's configChanges lands here instead of recreating (and thus
+     *  rebooting) the game. Layout follows root's layout listener; only the theme is manual. */
+    @Override public void onConfigurationChanged(android.content.res.Configuration c) {
+        super.onConfigurationChanged(c);
+        if (overlay != null) overlay.setConsoleTheme(settings.consoleIsDark(this));
+        refreshControlsVisibility();
+    }
+
+    /** A hat/stick direction held while focus moves (menu dialog, notification shade) never
+     *  gets its centre MOVE delivered here — the framework sends the release to the new
+     *  window — so the Core would keep that direction pressed. Key events get a synthetic
+     *  cancel UP; axes don't, hence the explicit release. */
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus) releaseAllKeys();
+    }
+
     private void ensureCameraPermissionAndStart() {
-        if (cameraDenied) return;   // user said no this foreground; don't nag every poll
+        // Permission first: a grant made later in system Settings must win over the latch.
         if (checkSelfPermission(android.Manifest.permission.CAMERA)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{ android.Manifest.permission.CAMERA }, REQ_CAMERA);
-            return;   // onRequestPermissionsResult starts it if granted
-        }
-        openCamera();
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) { openCamera(); return; }
+        if (cameraDenied) return;   // asked already; don't queue a prompt per 200 ms poll
+        cameraDenied = true;        // cleared by onRequestPermissionsResult on grant
+        requestPermissions(new String[]{ android.Manifest.permission.CAMERA }, REQ_CAMERA);
     }
 
     @Override public void onRequestPermissionsResult(int req, String[] p, int[] r) {
@@ -343,6 +361,11 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 if (f != null && f == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK) { pick = id; break; }
             }
             if (pick == null) return;   // no camera (e.g. Waydroid) → ROM keeps its noise
+            android.hardware.camera2.CameraCharacteristics cc = cm.getCameraCharacteristics(pick);
+            Integer ori = cc.get(android.hardware.camera2.CameraCharacteristics.SENSOR_ORIENTATION);
+            Integer facing = cc.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING);
+            cameraSensorOri = ori != null ? ori : 0;
+            cameraFront = facing != null && facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT;
             /* Pick the smallest supported YUV size that still covers the 128x112 sensor
                (hardcoding 176x144 fails on devices that dropped sub-QVGA). deliverFrame
                downscales whatever we get. */
@@ -409,19 +432,34 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         } catch (Exception e) { stopCamera(); }   // idempotent: frees any partial thread/reader
     }
 
-    /** Y plane → 8:7 center-crop → nearest-neighbor downscale to 128x112 grayscale → native. */
+    /** Y plane → rotate to the display (sensors are mounted at 90° on nearly every phone, so
+     *  an unrotated frame is sideways in portrait) → 8:7 center-crop → nearest-neighbor
+     *  downscale to 128x112 grayscale → native. */
     private void deliverFrame(android.media.Image img) {
         android.media.Image.Plane y = img.getPlanes()[0];
         java.nio.ByteBuffer buf = y.getBuffer();
         int rowStride = y.getRowStride();
         int w = img.getWidth(), h = img.getHeight();
-        int cropW = Math.min(w, h * 128 / 112);   // largest 128:112 region that fits
-        int cropH = Math.min(h, w * 112 / 128);
-        int cropX = (w - cropW) / 2, cropY = (h - cropH) / 2;
+        int disp = getWindowManager().getDefaultDisplay().getRotation() * 90;
+        // Clockwise rotation that turns the sensor frame upright (Camera2 reference formula).
+        int rot = cameraFront ? (cameraSensorOri + disp) % 360 : (cameraSensorOri - disp + 360) % 360;
+        boolean swap = rot == 90 || rot == 270;
+        int lw = swap ? h : w, lh = swap ? w : h;   // logical (upright) frame size
+        int cropW = Math.min(lw, lh * 128 / 112);   // largest 128:112 region that fits
+        int cropH = Math.min(lh, lw * 112 / 128);
+        int cropX = (lw - cropW) / 2, cropY = (lh - cropH) / 2;
         for (int ry = 0; ry < 112; ry++) {
-            int sy = Math.min(h - 1, cropY + ry * cropH / 112);
+            int ly = Math.min(lh - 1, cropY + ry * cropH / 112);
             for (int rx = 0; rx < 128; rx++) {
-                int sx = Math.min(w - 1, cropX + rx * cropW / 128);
+                int lx = Math.min(lw - 1, cropX + rx * cropW / 128);
+                if (cameraFront) lx = lw - 1 - lx;
+                int sx, sy;   // logical → sensor coordinates (inverse of a CW rotation by rot)
+                switch (rot) {
+                    case 90:  sx = ly;         sy = h - 1 - lx; break;
+                    case 180: sx = w - 1 - lx; sy = h - 1 - ly; break;
+                    case 270: sx = w - 1 - ly; sy = lx;         break;
+                    default:  sx = lx;         sy = ly;         break;
+                }
                 cameraGray[ry * 128 + rx] = buf.get(sy * rowStride + sx);
             }
         }
@@ -459,6 +497,10 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         } else if (gb >= 0) {
             return true;   // swallow auto-repeat for a held mapped key
         }
+        /* Unbound pad buttons must not reach the framework: Generic.kcm gives them fallbacks
+           (BUTTON_B → BACK, BUTTON_A → DPAD_CENTER), so mashing B while the ROM loads, or
+           after a remap that leaves B unbound, would finish() the game with no warning. */
+        if (KeyEvent.isGamepadButton(event.getKeyCode())) return true;
         return super.dispatchKeyEvent(event);
     }
 
@@ -594,8 +636,7 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
             @Override public int borderMode() { return settings.borderMode(); }
             @Override public void onExitGame() { finish(); }
             @Override public void onOpenSettings() {
-                menuOpen = false;   // menu is closing; SettingsActivity takes over, onResume re-applies
-                startActivity(new android.content.Intent(EmulatorActivity.this, SettingsActivity.class));
+                handoff(new android.content.Intent(EmulatorActivity.this, SettingsActivity.class));
             }
             @Override public void onConnectAccessory(int which) {
                 if (ctx == 0) return;
@@ -603,18 +644,20 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 else            { NativeBridge.nativeDisconnectPrinter(ctx); printerConnected = false; }
             }
             @Override public void onPrinterFeed() {
-                menuOpen = false;   // menu closing; PrinterFeedActivity takes over, onResume re-applies
                 android.content.Intent i = new android.content.Intent(EmulatorActivity.this, PrinterFeedActivity.class);
                 i.putExtra(PrinterFeedActivity.EXTRA_CTX, ctx);
-                startActivity(i);
+                handoff(i);
             }
             @Override public void onLinkCable() {
-                menuOpen = false;   // LinkActivity takes over; onResume re-applies
                 android.content.Intent i = new android.content.Intent(EmulatorActivity.this, LinkActivity.class);
                 i.putExtra(LinkActivity.EXTRA_CTX, ctx);
-                startActivity(i);
+                handoff(i);
             }
-            @Override public boolean printerConnected() { return printerConnected; }
+            @Override public boolean printerConnected() {
+                // Hosting/joining a link cable detaches the printer natively (same serial port).
+                if (printerConnected && ctx != 0 && NativeBridge.nativeLinkStatus(ctx) != 0) printerConnected = false;
+                return printerConnected;
+            }
             @Override public java.io.File stateFile(int slot) {
                 return SaveStore.stateFile(EmulatorActivity.this, romName, slot);
             }
@@ -625,13 +668,25 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         });
     }
 
+    /** Menu → another Activity. The menu is closing without onMenuClosed(), so clear
+     *  menuOpen for onResume to unpause — but drop the battery poll first: it could fire in
+     *  the gap before onPause and, seeing !menuOpen, briefly unpause behind the dialog. */
+    private void handoff(android.content.Intent i) {
+        menuOpen = false;
+        handler.removeCallbacks(batteryPoll);
+        startActivity(i);
+    }
+
     private void saveStateToSlot(int slot) {
         byte[] state = NativeBridge.nativeSaveState(ctx);
         if (state == null) {
             Toast.makeText(this, "Save failed", Toast.LENGTH_SHORT).show();
             return;
         }
-        SaveStore.write(SaveStore.stateFile(this, romName, slot), state);
+        if (!SaveStore.write(SaveStore.stateFile(this, romName, slot), state)) {
+            Toast.makeText(this, "Save failed", Toast.LENGTH_SHORT).show();
+            return;   // no thumbnail for a state that doesn't exist
+        }
         int[] f = NativeBridge.nativeCopyFrame(ctx);
         if (f != null && f.length >= 2) {
             int w = f[0], h = f[1];

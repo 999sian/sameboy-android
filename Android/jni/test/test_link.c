@@ -32,9 +32,25 @@ static uint8_t *make_link_rom(uint8_t sb, uint8_t sc, size_t *len) {
     return rom;
 }
 
-typedef struct { sb_emulator *e; int done_after; } runner;
+/* Same shell, arbitrary program at 0x150. */
+static uint8_t *make_rom(const uint8_t *prog, size_t plen, size_t *len) {
+    size_t n = 32 * 1024;
+    uint8_t *rom = calloc(1, n);
+    rom[0x100] = 0x00; rom[0x101] = 0xC3; rom[0x102] = 0x50; rom[0x103] = 0x01;  /* jp 0x150 */
+    memcpy(&rom[0x150], prog, plen);
+    uint8_t c = 0; for (int i = 0x134; i <= 0x14C; i++) c = c - rom[i] - 1;
+    rom[0x14D] = c;
+    *len = n;
+    return rom;
+}
+
+typedef struct { sb_emulator *e; int done_after; int start_delay_ms; } runner;
 static void *run_core(void *arg) {
     runner *r = arg;
+    if (r->start_delay_ms) {
+        struct timespec ts = { r->start_delay_ms / 1000, (long)(r->start_delay_ms % 1000) * 1000000L };
+        nanosleep(&ts, NULL);
+    }
     for (int i = 0; i < r->done_after; i++) sb_emu_run_frame(r->e);
     return NULL;
 }
@@ -106,7 +122,7 @@ int main(void) {
     sb_emu_link_set(s, sb_link_create(tb));
 
     pthread_t mt, st;
-    runner mr = { m, 600 }, sr = { s, 600 };   /* ~10s of frames; transfer completes early */
+    runner mr = { m, 600, 0 }, sr = { s, 600, 0 };   /* ~10s of frames; transfer completes early */
     pthread_create(&st, NULL, run_core, &sr);   /* start slave first so it polls */
     pthread_create(&mt, NULL, run_core, &mr);
     pthread_join(mt, NULL); pthread_join(st, NULL);
@@ -115,6 +131,42 @@ int main(void) {
     assert(sb_emu_peek_sb(m) == 0x3C);   /* master received slave's byte */
     assert(sb_emu_peek_sb(s) == 0xA5);   /* slave received master's byte */
 
+    sb_emu_link_clear(m); sb_emu_link_clear(s);
+    sb_emu_destroy(m); sb_emu_destroy(s);
+    free(mrom); free(srom);
+
+    /* Peer parked (in its menu / still in a pre-link screen): the slave thread doesn't run
+       for 2 s real time, longer than the master's 1.5 s per-byte timeout. The master retries
+       until it reads 0x3C. Before the fix the first timeout dead-latched the master and every
+       later exchange returned 0xFF instantly, so it never saw the slave come up. */
+    {
+        static const uint8_t mprog[] = {
+            0x3E, 0xA5, 0xE0, 0x01,   /* loop: ld a,0xA5 ; ldh (SB),a */
+            0x3E, 0x81, 0xE0, 0x02,   /*       ld a,0x81 ; ldh (SC),a */
+            0xF0, 0x02, 0xE6, 0x80,   /* wait: ldh a,(SC) ; and 0x80  */
+            0x20, 0xFA,               /*       jr nz,wait             */
+            0xF0, 0x01, 0xFE, 0x3C,   /*       ldh a,(SB) ; cp 0x3C   */
+            0x20, 0xEC,               /*       jr nz,loop             */
+            0x18, 0xFE,               /*       jr -2                  */
+        };
+        mrom = make_rom(mprog, sizeof(mprog), &ml);
+        srom = make_link_rom(0x3C, 0x80, &sl);
+        m = sb_emu_create(0x002, mrom, ml, NULL, 0);
+        s = sb_emu_create(0x002, srom, sl, NULL, 0);
+        assert(m && s);
+        sb_emu_reset(m); sb_emu_reset(s);
+        sb_emu_set_audio_drop(m, &drop);
+        sb_emu_set_audio_drop(s, &drop);
+        ta = sb_transport_loopback_pair(&tb);
+        sb_emu_link_set(m, sb_link_create(ta));
+        sb_emu_link_set(s, sb_link_create(tb));
+        runner mr2 = { m, 600, 0 }, sr2 = { s, 600, 2000 };
+        pthread_create(&st, NULL, run_core, &sr2);
+        pthread_create(&mt, NULL, run_core, &mr2);
+        pthread_join(mt, NULL); pthread_join(st, NULL);
+        assert(sb_emu_peek_sb(m) == 0x3C);   /* not 0xFF: master survived the unarmed phase */
+        assert(sb_emu_peek_sb(s) == 0xA5);
+    }
     sb_emu_link_clear(m); sb_emu_link_clear(s);
     sb_emu_destroy(m); sb_emu_destroy(s);
     free(mrom); free(srom);

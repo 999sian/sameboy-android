@@ -1,5 +1,7 @@
 package io.sameboy.android.cupertino
 
+import android.view.MotionEvent
+import android.view.Window
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
@@ -30,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,10 +50,13 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import io.sameboy.android.GamepadMapper
 
 // ---------- nav bar ----------
 
@@ -343,6 +349,24 @@ fun ActionSheetContent(
     }
 }
 
+/** Compose Dialogs are separate windows with their own Window.Callback, so DpadActivity's
+ *  hat-axis → DPAD synthesis never sees their input; without this a hat-switch d-pad is
+ *  dead inside every picker sheet. Wraps the dialog window's callback for the composition. */
+@Composable
+private fun HatDpadBridge() {
+    val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+    DisposableEffect(window) {
+        val orig = window?.callback
+        if (window == null || orig == null) return@DisposableEffect onDispose {}
+        val hat = BooleanArray(4)
+        window.callback = object : Window.Callback by orig {
+            override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean =
+                GamepadMapper.hatToDpadKeys(ev, hat) { orig.dispatchKeyEvent(it) } || orig.dispatchGenericMotionEvent(ev)
+        }
+        onDispose { window.callback = orig }
+    }
+}
+
 @Composable
 fun CupertinoActionSheet(
     title: String?,
@@ -351,6 +375,7 @@ fun CupertinoActionSheet(
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        HatDpadBridge()
         Box(
             Modifier.fillMaxSize()
                 .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
@@ -371,6 +396,7 @@ fun CupertinoAlertShell(
     content: @Composable () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
+        HatDpadBridge()
         Column(
             Modifier.widthIn(max = 340.dp).clip(RoundedCornerShape(14.dp))
                 .background(Cupertino.colors.secondarySystemGroupedBackground),

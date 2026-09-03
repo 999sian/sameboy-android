@@ -7,7 +7,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 /** Hardware-gamepad → GB-key mapping (keycode table + prefs) and axis→d-pad translation. */
-final class GamepadMapper {
+public final class GamepadMapper {
     // GB key indices (match NativeBridge), plus MENU: a frontend action, never sent to the Core.
     static final int RIGHT = 0, LEFT = 1, UP = 2, DOWN = 3, A = 4, B = 5, SELECT = 6, START = 7;
     static final int MENU = 8;
@@ -100,7 +100,7 @@ final class GamepadMapper {
      *  settings). Many pads (and Retroid firmware in "Xbox" mode) report the d-pad only as
      *  AXIS_HAT_X/Y, which View/Compose focus traversal never sees. `state` is the caller's
      *  4-entry {right,left,up,down} latch. Returns true when the event was a joystick move. */
-    static boolean hatToDpadKeys(MotionEvent e, boolean[] state, java.util.function.Consumer<KeyEvent> sink) {
+    public static boolean hatToDpadKeys(MotionEvent e, boolean[] state, java.util.function.Consumer<KeyEvent> sink) {
         if ((e.getSource() & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK
                 || e.getAction() != MotionEvent.ACTION_MOVE) return false;
         final int[] codes = { KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT,

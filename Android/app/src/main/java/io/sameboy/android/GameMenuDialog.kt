@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,7 +91,10 @@ object GameMenuDialog {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             )
             setContent {
-                CupertinoTheme(fillBackground = false) {
+                // EmulatorActivity is a plain Activity: AppCompat's night-mode override never
+                // reaches its configuration, so resolve the in-app theme by hand.
+                val dark = when (Settings(a).themeMode()) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
+                CupertinoTheme(fillBackground = false, dark = dark) {
                     // Box (propagateMinConstraints=false) drops the dialog's exact full-width
                     // min constraint so ActionSheetContent's widthIn(max = 420.dp) can apply.
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {

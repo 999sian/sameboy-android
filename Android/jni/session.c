@@ -47,6 +47,7 @@ static void *emu_loop(void *arg)
        (else the ring underruns -> audio crackle AND the frame lands late -> hitch). */
     sb_sched_boost_current_thread(-19 /* THREAD_PRIORITY_URGENT_AUDIO */);
     int applied_turbo = -1; /* -1: force first-iteration apply — core turbo state persists across stop/start */
+    int audio_retry_in = 0; /* frames until the next (re)open attempt while running without audio */
     while (atomic_load(&s->running)) {
         pthread_mutex_lock(&s->pause_mtx);
         while (s->paused && atomic_load(&s->running)) {
@@ -65,19 +66,26 @@ static void *emu_loop(void *arg)
         if (pt) sb_emu_link_set(s->emu, sb_link_create(pt));
 
         /* AAudio stream disconnected (route change): its callbacks are dead, so
-           nothing pops the ring anymore. Close it and reopen on the new default
-           device from this thread (AAudio forbids close from the error callback;
-           error_cb flushed the ring so a blocked push already got unstuck). */
+           nothing pops the ring anymore. Close it from this thread (AAudio forbids
+           close from the error callback; error_cb flushed the ring so a blocked push
+           already got unstuck) and fall into the reopen path below. */
         if (s->audio && atomic_load(&s->audio_dead)) {
             pthread_mutex_lock(&s->pause_mtx);
             sb_audio *dead = s->audio;   /* unlink under pause_mtx vs. pause/stop */
             s->audio = NULL;
             pthread_mutex_unlock(&s->pause_mtx);
             sb_audio_stop(dead);
+            audio_retry_in = 0;
+        }
+        /* No stream (start failed, or the new route wasn't ready when the old one died —
+           openStream fails transiently mid-BT-handover): keep retrying about once a second
+           rather than staying silent for the rest of the session. */
+        if (!s->audio && audio_retry_in-- <= 0) {
             sb_audio *fresh = sb_audio_start(sb_emu_audio_ring(s->emu), &s->audio_dead);
             pthread_mutex_lock(&s->pause_mtx);
             s->audio = fresh;            /* NULL → silent fallback pacing below */
             pthread_mutex_unlock(&s->pause_mtx);
+            audio_retry_in = 60;
         }
 
         int turbo = atomic_load(&s->turbo) ? 1 : 0;

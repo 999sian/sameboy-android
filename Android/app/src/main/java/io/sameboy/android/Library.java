@@ -51,11 +51,17 @@ final class Library {
         }
     }
 
-    /** Add unless a same-crc32 entry exists. Returns true if newly added.
-     *  A duplicate is ignored (existing favorite/lastPlayed preserved). */
+    /** Add unless a same-crc32 entry exists. Returns true if newly added. A duplicate keeps
+     *  its favorite/lastPlayed but takes the new location: SAF document URIs are path-based,
+     *  so a renamed/moved ROM re-imported would otherwise keep a dead URI forever. */
     boolean add(LibraryEntry e) {
         if (e.crc32 == null || e.crc32.isEmpty()) return false;
-        for (LibraryEntry x : entries) if (e.crc32.equals(x.crc32)) return false;
+        for (int i = 0; i < entries.size(); i++) {
+            LibraryEntry x = entries.get(i);
+            if (!e.crc32.equals(x.crc32)) continue;
+            entries.set(i, new LibraryEntry(e.uri, e.zipEntry, e.displayName, e.title, e.crc32, x.favorite, x.lastPlayed));
+            return false;
+        }
         entries.add(e);
         return true;
     }

@@ -41,9 +41,23 @@ final class SaveStore {
         } catch (IOException e) { return null; }
     }
 
-    static void write(File f, byte[] data) {
-        if (data == null) return;
-        try (FileOutputStream out = new FileOutputStream(f)) { out.write(data); }
-        catch (IOException e) { android.util.Log.e("SameBoy", "write failed: " + f, e); }
+    /** Atomic: tmp + fsync + rename, so a kill mid-write leaves the previous file intact
+     *  (an in-place truncate would destroy the old state/battery before the new bytes land). */
+    static boolean write(File f, byte[] data) {
+        if (data == null) return false;
+        File tmp = new File(f.getPath() + ".tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            out.write(data);
+            out.getFD().sync();
+        } catch (IOException e) {
+            android.util.Log.e("SameBoy", "write failed: " + f, e);
+            tmp.delete();
+            return false;
+        }
+        if (tmp.renameTo(f)) return true;
+        f.delete();   // rename over an existing file fails on some filesystems; retry once
+        if (tmp.renameTo(f)) return true;
+        android.util.Log.e("SameBoy", "rename failed: " + f);
+        return false;
     }
 }
