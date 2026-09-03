@@ -326,6 +326,36 @@ JNIEXPORT jint JNICALL
 Java_io_sameboy_android_NativeBridge_nativeRumbleAmplitude(JNIEnv *env, jclass c, jlong ctx)
 { (void)env; (void)c; return sb_session_rumble_amplitude((sb_session *)(uintptr_t)ctx); }
 
+JNIEXPORT jboolean JNICALL
+Java_io_sameboy_android_NativeBridge_nativeAddCheat(JNIEnv *env, jclass c, jlong ctx, jstring code, jstring desc, jboolean enabled)
+{
+    (void)c;
+    sb_session *s = (sb_session *)(uintptr_t)ctx;
+    if (!s || !code) return JNI_FALSE;
+    const char *cs = (*env)->GetStringUTFChars(env, code, NULL);
+    const char *ds = desc ? (*env)->GetStringUTFChars(env, desc, NULL) : NULL;
+    int ok = sb_session_add_cheat(s, cs, ds ? ds : "", enabled == JNI_TRUE);
+    if (ds) (*env)->ReleaseStringUTFChars(env, desc, ds);
+    (*env)->ReleaseStringUTFChars(env, code, cs);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeRemoveAllCheats(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; sb_session_remove_all_cheats((sb_session *)(uintptr_t)ctx); }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSetCheatsEnabled(JNIEnv *env, jclass c, jlong ctx, jboolean on)
+{ (void)env; (void)c; sb_session_set_cheats_enabled((sb_session *)(uintptr_t)ctx, on == JNI_TRUE); }
+
+JNIEXPORT jboolean JNICALL
+Java_io_sameboy_android_NativeBridge_nativeHasAccelerometer(JNIEnv *env, jclass c, jlong ctx)
+{ (void)env; (void)c; return sb_session_has_accelerometer((sb_session *)(uintptr_t)ctx) ? JNI_TRUE : JNI_FALSE; }
+
+JNIEXPORT void JNICALL
+Java_io_sameboy_android_NativeBridge_nativeSetAccelerometer(JNIEnv *env, jclass c, jlong ctx, jdouble x, jdouble y)
+{ (void)env; (void)c; sb_session_set_accelerometer((sb_session *)(uintptr_t)ctx, x, y); }
+
 JNIEXPORT void JNICALL
 Java_io_sameboy_android_NativeBridge_nativeDestroy(JNIEnv *env, jclass c, jlong ctx)
 { (void)env; (void)c; sb_session_destroy((sb_session *)(uintptr_t)ctx); }

@@ -424,6 +424,22 @@ void sb_emu_switch_model(sb_emulator *e, int model)
     GB_switch_model_and_reset(&e->gb, (GB_model_t)model);
 }
 
+/* --- Cheats --- Core keeps cheats in gb->cheats across GB_reset / GB_switch_model_and_reset /
+   GB_load_state_from_buffer; only GB_free drops them. All GB_*cheat* calls assert
+   not-running-other-thread, so callers park first. */
+int sb_emu_add_cheat(sb_emulator *e, const char *code, const char *desc, int enabled)
+{
+    return GB_import_cheat(&e->gb, code, desc ? desc : "", enabled != 0) != NULL;
+}
+
+void sb_emu_remove_all_cheats(sb_emulator *e) { GB_remove_all_cheats(&e->gb); }
+void sb_emu_set_cheats_enabled(sb_emulator *e, int on) { GB_set_cheats_enabled(&e->gb, on != 0); }
+size_t sb_emu_cheat_count(sb_emulator *e) { size_t n = 0; GB_get_cheats(&e->gb, &n); return n; }
+
+/* --- MBC7 accelerometer --- plain double stores, no thread assert in Core; any thread. */
+bool sb_emu_has_accelerometer(sb_emulator *e) { return GB_has_accelerometer(&e->gb); }
+void sb_emu_set_accelerometer(sb_emulator *e, double x, double y) { GB_set_accelerometer_values(&e->gb, x, y); }
+
 void sb_emu_set_rewind_length(sb_emulator *e, double seconds)
 {
     GB_set_rewind_length(&e->gb, seconds);

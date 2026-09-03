@@ -47,6 +47,17 @@ int    sb_emu_rewind_pop(sb_emulator *e);                               /* 1 = p
 int    sb_emu_battery_dirty(sb_emulator *e);                            /* emu thread / parked only */
 void   sb_emu_clear_battery_dirty(sb_emulator *e);
 
+/* --- Cheats --- call parked (Core asserts not-running-other-thread). Cheats persist across
+   sb_emu_reset / switch_model / load_state natively (only GB_free drops them). */
+int  sb_emu_add_cheat(sb_emulator *e, const char *code, const char *desc, int enabled); /* 1 ok, 0 = Core rejected code */
+void sb_emu_remove_all_cheats(sb_emulator *e);
+void sb_emu_set_cheats_enabled(sb_emulator *e, int on);                  /* master switch */
+size_t sb_emu_cheat_count(sb_emulator *e);                             /* test/debug */
+
+/* --- MBC7 accelerometer --- x,y in g. No thread assert in Core: any thread, running or not. */
+bool sb_emu_has_accelerometer(sb_emulator *e);
+void sb_emu_set_accelerometer(sb_emulator *e, double x, double y);
+
 /* Reads ROM title + CRC32 via a throwaway Core init (no session/emulator).
    title must be >= 17 bytes; it is NUL-terminated. Returns 0 on success,
    -1 if len < 0x150 (too small to be a cartridge). */

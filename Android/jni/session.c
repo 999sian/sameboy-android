@@ -299,6 +299,41 @@ int sb_session_rumble_amplitude(sb_session *s)
     return s ? sb_emu_rumble_amplitude(s->emu) : 0;
 }
 
+int sb_session_add_cheat(sb_session *s, const char *code, const char *desc, int enabled)
+{
+    if (!s) return 0;
+    int was = park_begin(s);
+    int ok = sb_emu_add_cheat(s->emu, code, desc, enabled);
+    park_end(s, was);
+    return ok;
+}
+
+void sb_session_remove_all_cheats(sb_session *s)
+{
+    if (!s) return;
+    int was = park_begin(s);
+    sb_emu_remove_all_cheats(s->emu);
+    park_end(s, was);
+}
+
+void sb_session_set_cheats_enabled(sb_session *s, int on)
+{
+    if (!s) return;
+    int was = park_begin(s);
+    sb_emu_set_cheats_enabled(s->emu, on);
+    park_end(s, was);
+}
+
+bool sb_session_has_accelerometer(sb_session *s)
+{
+    return s ? sb_emu_has_accelerometer(s->emu) : false;
+}
+
+void sb_session_set_accelerometer(sb_session *s, double x, double y)
+{
+    if (s) sb_emu_set_accelerometer(s->emu, x, y);
+}
+
 void sb_session_connect_printer(sb_session *s)
 {
     if (!s) return;

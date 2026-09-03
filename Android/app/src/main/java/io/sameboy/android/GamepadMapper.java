@@ -6,13 +6,15 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
-/** Hardware-gamepad → GB-key mapping (keycode table + prefs) and axis→d-pad translation. */
+/** Hardware-gamepad → GB-key mapping (keycode table + prefs) and axis→d-pad translation.
+ *  Indices 0..7 are Core keys; MENU and TURBO are frontend actions handled by the activity. */
 public final class GamepadMapper {
-    // GB key indices (match NativeBridge), plus MENU: a frontend action, never sent to the Core.
+    // GB key indices (match NativeBridge), plus MENU/TURBO: frontend actions, never sent to the Core.
     static final int RIGHT = 0, LEFT = 1, UP = 2, DOWN = 3, A = 4, B = 5, SELECT = 6, START = 7;
     static final int MENU = 8;
-    static final int KEYS = 9;
-    static final String[] GB_NAMES = { "Right", "Left", "Up", "Down", "A", "B", "Select", "Start", "Menu" };
+    static final int TURBO = 9;
+    static final int KEYS = 10;
+    static final String[] GB_NAMES = { "Right", "Left", "Up", "Down", "A", "B", "Select", "Start", "Menu", "Fast forward" };
 
     private static final int[] DEFAULTS = {
         KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT,
@@ -22,6 +24,8 @@ public final class GamepadMapper {
         // L1: present on every gamepad and unused by the Game Boy, so the in-game menu is
         // always reachable when the on-screen controls are hidden.
         KeyEvent.KEYCODE_BUTTON_L1,
+        // R1: likewise on every pad and unused by the Game Boy; mirrors the L1 = Menu choice.
+        KeyEvent.KEYCODE_BUTTON_R1,
     };
 
     private final SharedPreferences p;
@@ -37,7 +41,7 @@ public final class GamepadMapper {
         for (int i = 0; i < KEYS; i++) keycodeFor[i] = p.getInt("gp_" + i, DEFAULTS[i]);
     }
 
-    /** GB key (0..7) bound to this keycode, or -1. */
+    /** Key index (0..KEYS-1, incl. MENU/TURBO) bound to this keycode, or -1. */
     int gbKeyForKeycode(int keycode) {
         for (int i = 0; i < KEYS; i++) if (keycodeFor[i] == keycode) return i;
         return -1;

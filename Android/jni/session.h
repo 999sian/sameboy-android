@@ -34,6 +34,11 @@ void   sb_session_set_palette(sb_session *s, int builtin_index, const uint32_t r
 void   sb_session_set_volume(sb_session *s, int volume_256);            /* atomic, any thread */
 void   sb_session_set_filter(sb_session *s, int mode);   /* 0 off, 1 LCD; atomic, any thread */
 int    sb_session_rumble_amplitude(sb_session *s);                     /* any thread */
+int    sb_session_add_cheat(sb_session *s, const char *code, const char *desc, int enabled); /* self-parks; 1 ok, 0 rejected */
+void   sb_session_remove_all_cheats(sb_session *s);                    /* self-parks */
+void   sb_session_set_cheats_enabled(sb_session *s, int on);           /* self-parks */
+bool   sb_session_has_accelerometer(sb_session *s);                    /* any thread */
+void   sb_session_set_accelerometer(sb_session *s, double x, double y); /* units of g; any thread */
 void     sb_session_connect_printer(sb_session *s);     /* self-parks (GB_connect_printer) */
 void     sb_session_disconnect_printer(sb_session *s);  /* self-parks */
 unsigned sb_session_printer_generation(sb_session *s);

@@ -137,6 +137,18 @@ int main(void)
     memset(gray, 0x80, sizeof(gray));
     sb_session_camera_deliver(s, gray);
 
+    /* cheats add/enable/remove-all while running self-park, no deadlock; accel direct */
+    assert(sb_session_add_cheat(s, "01FF16D0", "gs", 1) == 1);
+    assert(sb_session_add_cheat(s, "nope", "bad", 1) == 0);
+    sb_session_set_cheats_enabled(s, 1);
+    usleep(30 * 1000);
+    sb_session_set_cheats_enabled(s, 0);
+    sb_session_remove_all_cheats(s);
+    assert(!sb_session_has_accelerometer(s));    /* MBC1 cart */
+    sb_session_set_accelerometer(s, 0.5, -0.5);   /* any-thread, no park */
+    assert(sb_session_add_cheat(NULL, "01FF16D0", "gs", 1) == 0);
+    assert(!sb_session_has_accelerometer(NULL));
+
     sb_session_stop(s);
     sb_session_destroy(s);
     free(rom);

@@ -45,6 +45,27 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
     private EmulatorSurfaceView surface;
     private FrameLayout.LayoutParams surfaceLp;
     private boolean controlsHidden = false;
+    private boolean resumed = false;
+    private boolean resumePending = false;   // resume prompt showing: don't clobber the auto-save
+    private final java.util.List<CheatStore.Cheat> cheats = new java.util.ArrayList<>();
+    private android.hardware.SensorManager sensors;
+    private boolean accelRegistered = false;
+    /** MBC7 tilt: phone accelerometer → Core, in g. Axis table per display rotation (contract). */
+    private final android.hardware.SensorEventListener accelListener = new android.hardware.SensorEventListener() {
+        @Override public void onSensorChanged(android.hardware.SensorEvent e) {
+            if (ctx == 0 || menuOpen) return;
+            double ax = e.values[0] / 9.81, ay = e.values[1] / 9.81;
+            double gx, gy;
+            switch (getWindowManager().getDefaultDisplay().getRotation()) {
+                case Surface.ROTATION_90:  gx = ay;  gy = ax;  break;
+                case Surface.ROTATION_180: gx = -ax; gy = ay;  break;
+                case Surface.ROTATION_270: gx = -ay; gy = -ax; break;
+                default:                   gx = ax;  gy = -ay; break;
+            }
+            NativeBridge.nativeSetAccelerometer(ctx, gx, gy);
+        }
+        @Override public void onAccuracyChanged(android.hardware.Sensor s, int a) {}
+    };
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Runnable batteryPoll = new Runnable() {
@@ -186,6 +207,57 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         root.addOnLayoutChangeListener((v, l, t, r, b, pl, pt, pr, pb) -> applyScreenGeometry());
         setContentView(root);
         refreshControlsVisibility();
+
+        NativeBridge.nativeSetCheatsEnabled(ctx, true);   // master switch; per-cheat flags do the rest
+        cheats.addAll(CheatStore.load(this, romName));
+        for (java.util.Iterator<CheatStore.Cheat> it = cheats.iterator(); it.hasNext(); ) {
+            CheatStore.Cheat c = it.next();
+            if (!NativeBridge.nativeAddCheat(ctx, c.code, c.desc, c.enabled)) it.remove();   // Core rejected
+        }
+
+        File auto = SaveStore.autoStateFile(this, romName);
+        if (auto.exists()) {
+            /* menuOpen makes onSurfaceReady park the emu, so the game doesn't run behind the
+               prompt; resumePending keeps onPause from overwriting the auto-save meanwhile. */
+            menuOpen = true;
+            resumePending = true;
+            if (GamepadMapper.anyGamepadConnected()) getWindow().getDecorView().requestFocusFromTouch();   // see openMenu
+            ResumePrompt.show(this, () -> {
+                resumePending = false;
+                if (ctx == 0 || isFinishing()) return;
+                if (!NativeBridge.nativeLoadState(ctx, SaveStore.read(auto))) {
+                    Toast.makeText(this, "Load failed", Toast.LENGTH_SHORT).show();
+                    auto.delete();   // don't re-prompt with a state the Core can't take
+                }
+                menuOpen = false;
+                NativeBridge.nativePause(ctx, false);
+                recheckGeometrySoon();
+            }, () -> {
+                resumePending = false;
+                auto.delete();
+                if (ctx == 0 || isFinishing()) return;
+                menuOpen = false;
+                NativeBridge.nativePause(ctx, false);
+            });
+        }
+        syncAccelerometer();   // onResume may have run before ctx existed
+    }
+
+    /** Register the accelerometer only while resumed with an MBC7 cart; unregister otherwise. */
+    private void syncAccelerometer() {
+        boolean want = resumed && ctx != 0 && NativeBridge.nativeHasAccelerometer(ctx);
+        if (want == accelRegistered) return;
+        if (sensors == null) sensors = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sensors == null) return;
+        if (want) {
+            android.hardware.Sensor s = sensors.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
+            if (s == null) return;   // no sensor → cart reads level
+            accelRegistered = sensors.registerListener(accelListener, s,
+                    android.hardware.SensorManager.SENSOR_DELAY_GAME, handler);
+        } else {
+            sensors.unregisterListener(accelListener);
+            accelRegistered = false;
+        }
     }
 
     private byte[] readRom(Uri uri, String zipEntry) {
@@ -270,6 +342,8 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
 
     @Override protected void onPause() {
         super.onPause();
+        resumed = false;
+        syncAccelerometer();
         handler.removeCallbacks(batteryPoll);
         handler.removeCallbacks(rumblePoll);
         handler.removeCallbacks(cameraPoll);
@@ -282,10 +356,14 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
         if (ctx != 0) {
             NativeBridge.nativePause(ctx, true);
             SaveStore.write(savFile, NativeBridge.nativeSaveBattery(ctx));
+            if (!resumePending)   // prompt still up: the boot state must not replace the real one
+                SaveStore.write(SaveStore.autoStateFile(this, romName), NativeBridge.nativeSaveState(ctx));
         }
     }
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
+        syncAccelerometer();
         pinRefreshRate();   /* reassert 60Hz clamp; window attrs can reset across pause */
         if (ctx != 0 && !menuOpen) {
             settings.apply(ctx);                       // self-parks once; picks up Settings changes
@@ -491,6 +569,13 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 openMenu();
             return true;
         }
+        if (gb == GamepadMapper.TURBO) {  // hold-to-fast-forward; frontend action, never a Core key
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                NativeBridge.nativeSetTurbo(ctx, true);
+            else if (event.getAction() == KeyEvent.ACTION_UP)
+                NativeBridge.nativeSetTurbo(ctx, false);
+            return true;
+        }
         if (gb >= 0 && event.getRepeatCount() == 0) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) { NativeBridge.nativeSetKey(ctx, gb, true); return true; }
             if (event.getAction() == KeyEvent.ACTION_UP)   { NativeBridge.nativeSetKey(ctx, gb, false); return true; }
@@ -534,7 +619,10 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
 
     /** Release every GB key + clear axis latch (gamepad unplug / pause: no ACTION_UP arrives). */
     private void releaseAllKeys() {
-        if (ctx != 0) for (int i = 0; i < 8; i++) NativeBridge.nativeSetKey(ctx, i, false);
+        if (ctx != 0) {
+            for (int i = 0; i < 8; i++) NativeBridge.nativeSetKey(ctx, i, false);
+            NativeBridge.nativeSetTurbo(ctx, false);   // held fast-forward must not survive focus loss
+        }
         for (int i = 0; i < axisState.length; i++) axisState[i] = false;
     }
 
@@ -665,7 +753,31 @@ public class EmulatorActivity extends Activity implements EmulatorSurfaceView.Li
                 java.io.File t = SaveStore.stateThumb(EmulatorActivity.this, romName, slot);
                 return t.exists() ? android.graphics.BitmapFactory.decodeFile(t.getPath()) : null;
             }
+            @Override public java.util.List<CheatStore.Cheat> cheats() { return cheats; }
+            @Override public boolean onAddCheat(String code, String desc) {
+                if (ctx == 0 || !NativeBridge.nativeAddCheat(ctx, code, desc, true)) return false;
+                cheats.add(new CheatStore.Cheat(code, desc, true));
+                CheatStore.save(EmulatorActivity.this, romName, cheats);
+                return true;
+            }
+            @Override public void onToggleCheat(int index, boolean enabled) {
+                cheats.get(index).enabled = enabled;
+                resyncCheats();
+            }
+            @Override public void onRemoveCheat(int index) {
+                cheats.remove(index);
+                resyncCheats();
+            }
         });
+    }
+
+    /** ponytail: drop + re-add the whole list on any edit; a few entries, no per-cheat handles. */
+    private void resyncCheats() {
+        if (ctx != 0) {
+            NativeBridge.nativeRemoveAllCheats(ctx);
+            for (CheatStore.Cheat c : cheats) NativeBridge.nativeAddCheat(ctx, c.code, c.desc, c.enabled);
+        }
+        CheatStore.save(this, romName, cheats);
     }
 
     /** Menu → another Activity. The menu is closing without onMenuClosed(), so clear

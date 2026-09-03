@@ -396,6 +396,40 @@ static void test_rumble(void)
     free(rom);
 }
 
+/* GameShark + Game Genie codes import; garbage rejected; cheats survive reset, model
+   switch and state load (Core keeps them in gb->cheats, only GB_free drops them);
+   ROM-only cart has no accelerometer. */
+static void test_cheats_and_accel(void)
+{
+    size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
+    sb_emulator *e = sb_emu_create(0x002, rom, rlen, NULL, 0);
+    assert(e);
+    sb_emu_reset(e);
+    assert(sb_emu_cheat_count(e) == 0);
+    assert(sb_emu_add_cheat(e, "01FF16D0", "gs", 1) == 1);        /* GameShark */
+    assert(sb_emu_add_cheat(e, "ZZZ-ZZZ", NULL, 1) == 0);         /* Game Genie: bad hex */
+    assert(sb_emu_add_cheat(e, "hello", "junk", 1) == 0);
+    assert(sb_emu_add_cheat(e, "", "empty", 1) == 0);
+    assert(sb_emu_cheat_count(e) == 1);
+    sb_emu_set_cheats_enabled(e, 1);
+    run_frames(e, 3);
+    sb_emu_reset(e);
+    assert(sb_emu_cheat_count(e) == 1);
+    sb_emu_switch_model(e, 0x205);                                /* CGB-E */
+    assert(sb_emu_cheat_count(e) == 1);
+    uint8_t *st = NULL; size_t n = sb_emu_save_state(e, &st);
+    assert(n > 0);
+    assert(sb_emu_load_state(e, st, n) == 0);
+    free(st);
+    assert(sb_emu_cheat_count(e) == 1);
+    sb_emu_remove_all_cheats(e);
+    assert(sb_emu_cheat_count(e) == 0);
+    assert(!sb_emu_has_accelerometer(e));
+    sb_emu_set_accelerometer(e, 1.0, 0.0);                         /* harmless on non-MBC7 */
+    sb_emu_destroy(e);
+    free(rom);
+}
+
 int main(void)
 {
     size_t rlen; uint8_t *rom = make_rom(&rlen, 0);
@@ -450,6 +484,7 @@ int main(void)
     test_rumble();
     test_printer();
     test_camera();
+    test_cheats_and_accel();
     printf("emulator: all tests passed\n");
     return 0;
 }

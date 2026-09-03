@@ -48,6 +48,17 @@ public final class NativeBridge {
     public static native void nativeLinkDisconnect(long ctx);
     public static native int nativeLinkStatus(long ctx);   // 0 idle 1 listen 2 connecting 3 connected 4 error
     public static native int nativeRumbleAmplitude(long ctx);
+    /** Cheats. code: GameShark (8 hex digits, e.g. "01FF16D0") or Game Genie ("xxx-xxx" / "xxx-xxx-xxx").
+     *  Returns false if the Core rejects the code (nothing added). Cheats persist across reset,
+     *  model switch and state load; they're dropped only when the session is destroyed.
+     *  All three park the emu thread internally — call from the main thread. */
+    public static native boolean nativeAddCheat(long ctx, String code, String desc, boolean enabled);
+    public static native void    nativeRemoveAllCheats(long ctx);
+    public static native void    nativeSetCheatsEnabled(long ctx, boolean on);   // master switch (GB_set_cheats_enabled)
+    /** MBC7 tilt (e.g. Kirby Tilt 'n' Tumble). x,y in units of g (±4 recommended); setter is safe from
+     *  any thread while running, no parking. */
+    public static native boolean nativeHasAccelerometer(long ctx);
+    public static native void    nativeSetAccelerometer(long ctx, double x, double y);
     public static native void nativeDestroy(long ctx);
 
     // GB_key_t indices (Core/joypad.h)

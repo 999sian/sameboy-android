@@ -32,6 +32,11 @@ final class SaveStore {
         return new File(subDir(ctx, "states"), romName + ".s" + slot + ".png");
     }
 
+    /** Auto-save written on pause; offered as "Continue" at the next launch. */
+    static File autoStateFile(Context ctx, String romName) {
+        return new File(subDir(ctx, "states"), romName + ".auto");
+    }
+
     static byte[] read(File f) {
         if (!f.exists()) return null;
         try (RandomAccessFile raf = new RandomAccessFile(f, "r")) {

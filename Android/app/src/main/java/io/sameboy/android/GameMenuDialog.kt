@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,10 +44,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.sameboy.android.cupertino.ActionSheetContent
 import io.sameboy.android.cupertino.CupText
@@ -73,9 +79,13 @@ object GameMenuDialog {
         fun onExitGame()
         fun stateFile(slot: Int): File
         fun thumbnail(slot: Int): Bitmap?
+        fun cheats(): List<CheatStore.Cheat>                 // host-owned snapshot, read-only
+        fun onAddCheat(code: String, desc: String): Boolean  // false = Core rejected the code
+        fun onToggleCheat(index: Int, enabled: Boolean)
+        fun onRemoveCheat(index: Int)
     }
 
-    private enum class Screen { Menu, SaveSlots, LoadSlots, Models, Border, Accessory }
+    private enum class Screen { Menu, SaveSlots, LoadSlots, Models, Border, Accessory, Cheats, RemoveCheat, AddCheat }
 
     @JvmStatic
     fun show(a: Activity, h: Host) {
@@ -128,6 +138,7 @@ object GameMenuDialog {
                     SheetAction("Reset") { h.onResetGame(); dismiss() },
                     SheetAction("Model", dismisses = false) { screen = Screen.Models },
                     SheetAction("Border", dismisses = false) { screen = Screen.Border },
+                    SheetAction("Cheats", dismisses = false) { screen = Screen.Cheats },
                     SheetAction("Connect accessory", dismisses = false) { screen = Screen.Accessory },
                     SheetAction("Printer feed") { h.onPrinterFeed(); takeOver() },
                     SheetAction("Link cable") { h.onLinkCable(); takeOver() },
@@ -179,6 +190,99 @@ object GameMenuDialog {
             }
             Screen.SaveSlots -> SlotSheet(h, forSave = true, dismiss = dismiss)
             Screen.LoadSlots -> SlotSheet(h, forSave = false, dismiss = dismiss)
+            Screen.Cheats -> {
+                var cheats by remember { mutableStateOf(h.cheats().toList()) }
+                val rows = if (cheats.isEmpty()) listOf(SheetAction("No cheats yet", dismisses = false) {})
+                else cheats.mapIndexed { i, c ->
+                    SheetAction(cheatLabel(c), dismisses = false) {
+                        h.onToggleCheat(i, !c.enabled); cheats = h.cheats().toList()
+                    }
+                }
+                ActionSheetContent(
+                    title = "Cheats",
+                    actions = rows + listOfNotNull(
+                        SheetAction("Add cheat\u2026", dismisses = false) { screen = Screen.AddCheat },
+                        if (cheats.isEmpty()) null
+                        else SheetAction("Remove cheat\u2026", destructive = true, dismisses = false) { screen = Screen.RemoveCheat },
+                    ),
+                    cancelLabel = "Done",
+                    onDismiss = dismiss,
+                )
+            }
+            Screen.RemoveCheat -> ActionSheetContent(
+                title = "Remove cheat",
+                actions = h.cheats().mapIndexed { i, c ->
+                    SheetAction(cheatLabel(c), destructive = true, dismisses = false) {
+                        h.onRemoveCheat(i); screen = Screen.Cheats
+                    }
+                },
+                cancelLabel = "Back",
+                onDismiss = { screen = Screen.Cheats },
+            )
+            Screen.AddCheat -> AddCheatCard(h, done = { screen = Screen.Cheats })
+        }
+    }
+
+    private fun cheatLabel(c: CheatStore.Cheat): String =
+        (if (c.enabled) "\u2713 " else "") + c.desc.ifBlank { c.code } + (if (c.desc.isNotBlank()) "  ${c.code}" else "")
+
+    @Composable
+    private fun AddCheatCard(h: Host, done: () -> Unit) {
+        var code by remember { mutableStateOf("") }
+        var name by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        val codeFocus = remember { FocusRequester() }
+        val nameFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) { runCatching { codeFocus.requestFocus() } }
+        fun add() {
+            val c = code.trim().uppercase()
+            if (c.isNotEmpty() && h.onAddCheat(c, name.trim())) done()
+            else error = "Unrecognized code \u2014 use GameShark 01FF16D0 or Game Genie 000-00A-00B"
+        }
+        Column(
+            Modifier.fillMaxWidth().padding(8.dp).clip(RoundedCornerShape(14.dp))
+                .background(Cupertino.colors.secondarySystemGroupedBackground),
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                CupText("Add cheat", Cupertino.type.headline, modifier = Modifier.padding(bottom = 12.dp))
+                CheatField(code, { code = it; error = null }, "Code", codeFocus, ImeAction.Next) { nameFocus.requestFocus() }
+                Spacer(Modifier.height(8.dp))
+                CheatField(name, { name = it }, "Name (optional)", nameFocus, ImeAction.Done, ::add)
+                error?.let { CupText(it, Cupertino.type.footnote, Cupertino.colors.systemRed, modifier = Modifier.padding(top = 8.dp)) }
+            }
+            Box(Modifier.fillMaxWidth().height(0.5.dp).background(Cupertino.colors.separator))
+            Row(Modifier.fillMaxWidth()) {
+                AlertButton("Cancel", Modifier.weight(1f), onClick = done)
+                Box(Modifier.width(0.5.dp).height(44.dp).background(Cupertino.colors.separator))
+                AlertButton("Add", Modifier.weight(1f), onClick = ::add)
+            }
+        }
+    }
+
+    @Composable
+    private fun CheatField(
+        value: String, onChange: (String) -> Unit, hint: String,
+        focusRequester: FocusRequester, ime: ImeAction, onAction: () -> Unit,
+    ) {
+        var focused by remember { mutableStateOf(false) }
+        val shape = RoundedCornerShape(10.dp)
+        Box(
+            Modifier.fillMaxWidth().height(44.dp).clip(shape).background(Cupertino.colors.fill)
+                .border(if (focused) 2.dp else 0.dp, if (focused) Cupertino.colors.systemBlue else Color.Transparent, shape)
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (value.isEmpty()) CupText(hint, Cupertino.type.body, Cupertino.colors.tertiaryLabel, maxLines = 1)
+            BasicTextField(
+                value = value,
+                onValueChange = onChange,
+                textStyle = Cupertino.type.body.copy(color = Cupertino.colors.label),
+                cursorBrush = SolidColor(Cupertino.colors.systemBlue),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ime),
+                keyboardActions = KeyboardActions(onNext = { onAction() }, onDone = { onAction() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onFocusChanged { focused = it.isFocused },
+            )
         }
     }
 
@@ -272,5 +376,30 @@ object GameMenuDialog {
                 )
             }
         }
+    }
+}
+
+/** Alert-card footer button (CupertinoAlertShell look) with controller focus highlight.
+ *  Shared with ResumePrompt, which lives in its own dialog window. */
+@Composable
+internal fun AlertButton(
+    label: String, modifier: Modifier,
+    focusRequester: FocusRequester? = null, bold: Boolean = false, onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier.height(44.dp)
+            .background(if (pressed || focused) Cupertino.colors.fill else Color.Transparent)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        CupText(
+            label, if (bold) Cupertino.type.headline else Cupertino.type.body,
+            Cupertino.colors.systemBlue, maxLines = 1,
+        )
     }
 }
